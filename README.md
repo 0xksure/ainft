@@ -11,7 +11,11 @@ The holder of the NFT can configure the AI agent and to some degree control it. 
 - Decide where the agent should get its data from
 - Decide the agents actions
 
-Anyone can interact with your agent by sending it messages on the open instruction. 
+Anyone can interact with your agent by sending it messages on the open instruction.
+
+## Architecture 
+
+<img src="./assets/architecture.png" width="500">
 
 ## Execution
 
