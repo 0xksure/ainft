@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  execution-client:
+    build: 
+      context: ./execution-client
+      dockerfile: Dockerfile
+    environment:
+      - MODEL_PROVIDER=ionet
+      - MODEL_NAME=mistral-7b
+      - API_KEY=${API_KEY}
+      - SOLANA_RPC_URL=${SOLANA_RPC_URL}
+      - MODEL_ENDPOINT=http://model:8080
+    depends_on:
+      - model
+    ports:
+      - "3000:3000"
+
+  model:
+    build:
+      context: ./model-deployment
+      dockerfile: Dockerfile
+    environment:
+      - MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.1
+      - VALID_API_KEYS=${MODEL_API_KEYS}
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu] 
