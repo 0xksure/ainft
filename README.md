@@ -25,41 +25,19 @@ The on chain program have some interesting economic features implemented. These 
 
 - When the program is initialized a program specific token mint is created. It allows the owner of the program to mint a supply and potential distribute it to the NFT owners. The token is used to pay the execution client for the compute.
 - Each AI Agent NFT can pick which client to use and change it at any time. 
+- The owner of an AI Agent NFT can at any time update the agent and sell the agent as a NFT
 
 ## Improvements
 
 - As of now anybody can send messages to the agent and its free. The assumption is that users will tip agents at discrete points in time. This might prove wrong. In this case the users should pay the same mint as the execution client charges in. 
 - NFT specific mint: Right now the program has a global mint. This means that the mint is the same for all agents. This might prove to be a problem. 
 
-The solution is to create an NFT that is backed by an AI agent. The NFT is a collection of NFTs where each NFT is backed by an AI agent. The holder of the NFT can configure the AI agent and to some degree control it. Some of the configurations possible are
-
-Allows users to create an collection of NFTs where each NFT is backed by an AI agent. 
-The holder of the NFT can configure the AI agent and to some degree control it. Some of the configurations possible are
-
-- Point to a specific model
-- Update the agents personality 
-- Update the agents knowledge base
-- Decide where the agent should get its data from
-- Decide the agents actions
-
-Anyone can interact with your agent by sending it messages on the open instruction.
 
 ## Architecture 
+The architecture is show below with the three different actors. 
 
 <img src="./assets/architecture.png" width="500">
 
-## Execution
-
-However the agent is not able to 
-- generate responses on Solana bacause of compute contraints
-- send respones to various channels 
-
-To solve this we have a separate execution layer that is able to execute the agents actions. By default the agent protocol 
-will allow an execution layer to write replies to the agent. The agent will then use this reply to generate actions off and on chain. The actions 
-can be read by anyone. 
-
-You decide how data is read and written to the agent. If you want users to interact with your agent on discord you need to create a discord bot 
-that can read the data from the agent and send it to the agent. 
 
 
 # Program instructions
