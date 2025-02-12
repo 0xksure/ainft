@@ -1,5 +1,8 @@
 # AI NFT
 
+<img src="./assets/AINFT_logo.png" width="500">
+
+
 ## A program for creating AI agents NFTs. 
 
 Most of the AI agents today are a program that takes input an combines the data with previous seen data for then to send it to a model provider like openai or anthropic. Part of the prompt is also instructions on how the agent should behave. You can launch yur own agent on all cloud platforms. One remaining problem is: Who pays for the compute? 
