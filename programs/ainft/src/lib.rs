@@ -45,9 +45,14 @@ pub mod ainft {
     /// # Arguments
     /// * `name` - Name of the AI NFT
     /// * `uri` - URI pointing to the NFT's metadata
-    /// * `character_config` - JSON configuration defining the AI's personality and behavior
-    pub fn mint_ainft(ctx: Context<MintAiNft>, name: String, uri: String) -> Result<()> {
-        instructions::mint_ainft_handler(ctx, name, uri)
+    /// * `price_per_message` - Price per message with decimals.
+    pub fn mint_ainft(
+        ctx: Context<MintAiNft>,
+        name: String,
+        uri: String,
+        price_per_message: u64,
+    ) -> Result<()> {
+        instructions::mint_ainft_handler(ctx, name, uri, price_per_message)
     }
 
     /// Creates a compute mint for an AI NFT

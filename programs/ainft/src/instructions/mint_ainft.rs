@@ -130,6 +130,7 @@ pub fn mint_ainft_handler(
     ctx: Context<MintAiNft>,
     name: String,
     uri: String,
+    price_per_message: u64,
 ) -> Result<()> {
     // Verify supply
     require!(ctx.accounts.ai_nft.mint_count <= ctx.accounts.ai_nft.max_supply, AiNftError::SupplyExceeded);
@@ -158,6 +159,7 @@ pub fn mint_ainft_handler(
         &ctx.accounts.ai_nft.default_execution_client,
         Pubkey::default(),
         ctx.bumps.ai_character,
+        price_per_message,
     );
     // Process metadata
     ctx.accounts.process_metadata(&name, &uri)?;

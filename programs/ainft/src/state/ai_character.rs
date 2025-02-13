@@ -324,6 +324,7 @@ pub struct AiCharacterNFT {
     pub total_processed: u64, // 8 bytes
     pub compute_token_account: Pubkey,
     pub execution_client: Pubkey, // 32 bytes
+    pub price_per_message: u64,   // 8 bytes
     pub bump: [u8; 1],            // 1 byte
 }
 
@@ -342,6 +343,7 @@ impl AiCharacterNFT {
         name: &str,
         execution_client: &Pubkey,
         compute_token_account: Option<Pubkey>,
+        price_per_message: u64,
         bump: u8,
     ) -> Self {
         let mut name_bytes = [0u8; 32];
@@ -354,6 +356,7 @@ impl AiCharacterNFT {
             name: name_bytes,
             message_count: 0,
             total_processed: 0,
+            price_per_message: price_per_message,
             execution_client: *execution_client,
             compute_token_account: compute_token_account.unwrap(),
             character_config: CharacterConfig::default(),
@@ -369,6 +372,7 @@ impl AiCharacterNFT {
         execution_client: &Pubkey,
         compute_token_account: Pubkey,
         bump: u8,
+        price_per_message: u64,
     ) {
         let mut name_bytes = [0u8; 32];
         let name_slice = name.as_bytes();
@@ -380,7 +384,12 @@ impl AiCharacterNFT {
         self.execution_client = *execution_client;
         self.compute_token_account = compute_token_account;
         self.total_processed = 0;
+        self.price_per_message = price_per_message;
         self.bump = [bump; 1];
+    }
+
+    pub fn update_price_per_message(&mut self, price_per_message: u64) {
+        self.price_per_message = price_per_message;
     }
 
     pub fn update_character_config(&mut self, new_config: CharacterConfigInput) -> Result<()> {
