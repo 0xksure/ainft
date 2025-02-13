@@ -3,6 +3,29 @@
 <img src="./assets/AINFT_logo.png" width="500">
 
 
+## Getting started
+
+Run the anchor integration tests
+```bash 
+just test 
+```
+
+In orde to run the program locally first run the test validator. 
+```bash 
+just start-local
+```
+
+Then run the program. 
+```bash 
+just deploy-local
+```
+
+Finally initialize the program 
+```bash 
+just init
+```
+
+
 ## A program for creating AI agents NFTs. 
 
 Most of the AI agents today are a program that takes input an combines the data with previous seen data for then to send it to a model provider like openai or anthropic. Part of the prompt is also instructions on how the agent should behave. You can launch yur own agent on all cloud platforms. One remaining problem is: Who pays for the compute? 

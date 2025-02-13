@@ -6,3 +6,4 @@ execution-client
 
 .anchor
 .DS_Store
+!env.example
