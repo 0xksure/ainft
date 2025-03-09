@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+}
+
+body {
+    color: rgb(var(--foreground-rgb));
+    background: linear-gradient(to bottom,
+            transparent,
+            rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
+}
+
+/* Wallet adapter button styles */
+.wallet-adapter-button {
+    background: linear-gradient(to right, rgb(14, 165, 233), rgb(56, 189, 248)) !important;
+    border: none !important;
+    padding: 0.5rem 1rem !important;
+    height: auto !important;
+    font-family: inherit !important;
+    font-weight: 500 !important;
+    color: white !important;
+    border-radius: 0.5rem !important;
+    transition: all 0.2s !important;
+    cursor: pointer !important;
+    pointer-events: auto !important;
+    position: relative !important;
+    z-index: 50 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.wallet-adapter-button:hover {
+    opacity: 0.9 !important;
+    transform: translateY(-1px) !important;
+}
+
+.wallet-adapter-button:not([disabled]):hover {
+    background: linear-gradient(to right, rgb(14, 165, 233), rgb(56, 189, 248)) !important;
+}
+
+/* Wallet button container */
+.wallet-button-container {
+    display: flex;
+    justify-content: flex-end;
+    padding: 1rem 2rem;
+    position: relative;
+    z-index: 20;
+}
+
+/* Fix for wallet modal display */
+.wallet-adapter-modal {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    opacity: 1 !important;
+    transition-property: opacity !important;
+    z-index: 1040 !important;
+}
+
+.wallet-adapter-modal-container {
+    display: flex !important;
+    margin: 3rem !important;
+    min-height: calc(100vh - 6rem) !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* Ensure only one wallet button is visible */
+.wallet-adapter-dropdown {
+    display: inline-block !important;
+}
+
+/* Fix for mobile menu */
+.mobile-menu {
+    z-index: 40;
+}
+
+/* Fix for network dropdown */
+.network-dropdown {
+    z-index: 30;
+}

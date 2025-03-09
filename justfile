@@ -21,8 +21,11 @@ build:
     anchor build
 
 # Combined command to start validator, deploy and initialize
-start: validator deploy-local init
+start: deploy-local init
 
 local-airdrop:
     solana airdrop -u http://127.0.0.1:8899 10 ${WALLET_ADDRESS} 
     solana airdrop -u http://127.0.0.1:8899 10 $(solana address -k ~/.config/solana/id_latest.json)
+
+deploy ENV: 
+    anchor deploy --program-name ainft --provider.cluster {{ENV}} --program-keypair ./target/deploy/ainft-keypair.json
