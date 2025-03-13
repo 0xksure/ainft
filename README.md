@@ -95,3 +95,9 @@ pay for off chain compute.
 8. Donate. Anyone can donate to the aiNFT. This is funds that the aiNFT will receive. The aiNFT will be able to use this to pay for actions. 
 
 9. Transfer aiNFT. Allow the holder of the aiNFT to transfer it to another account. 
+
+# TODO
+- Implement write message
+- Update AINFT 
+- Create execution client
+- create simple client that reads messages of ainfts, combine with earlier context, write answer back. Client needs to be able to write to the anchor program

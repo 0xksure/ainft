@@ -3,7 +3,6 @@ import { getProgram, findMasterMintPDA, findAppAinftPDA, findMetadataPDA } from 
 import { Logger } from '../utils/logger';
 import { BN } from '@coral-xyz/anchor';
 import { associatedAddress } from '@coral-xyz/anchor/dist/cjs/utils/token';
-import { publicKey } from '@coral-xyz/anchor/dist/cjs/utils';
 
 async function main() {
     Logger.info('Starting AI NFT App initialization...');

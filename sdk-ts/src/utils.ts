@@ -2,7 +2,7 @@ import { Cluster, Connection, Keypair, PublicKey, clusterApiUrl } from '@solana/
 import { Program, AnchorProvider, Wallet, BN } from '@coral-xyz/anchor';
 import IDL from '../../target/idl/ainft.json'
 import { Ainft } from '../../target/types/ainft'
-import * as bs58 from 'bs58';
+
 import dotenv from 'dotenv';
 import { associatedAddress } from '@coral-xyz/anchor/dist/cjs/utils/token';
 const METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
@@ -14,6 +14,12 @@ export function getConnection(): Connection {
     const network = process.env.NETWORK || 'devnet';
     if (network === 'localnet') {
         return new Connection("http://127.0.0.1:8899", {
+            commitment: 'confirmed',
+            confirmTransactionInitialTimeout: 10000,
+        });
+    }
+    if (network === 'sonic-testnet') {
+        return new Connection("https://api.testnet.sonic.game", {
             commitment: 'confirmed',
             confirmTransactionInitialTimeout: 10000,
         });

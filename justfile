@@ -29,3 +29,4 @@ local-airdrop:
 
 deploy ENV: 
     anchor deploy --program-name ainft --provider.cluster {{ENV}} --program-keypair ./target/deploy/ainft-keypair.json
+

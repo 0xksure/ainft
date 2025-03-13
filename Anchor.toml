@@ -8,11 +8,14 @@ ainft = "14M8GDtWobqndjTrJ4sDZJ2CY74TXyGWGJzJoAE4TNYh"
 [programs.devnet]
 ainft = "14M8GDtWobqndjTrJ4sDZJ2CY74TXyGWGJzJoAE4TNYh"
 
+[programs.mainnet-beta]
+ainft = "14M8GDtWobqndjTrJ4sDZJ2CY74TXyGWGJzJoAE4TNYh"
+
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Localnet"
+cluster = "https://api.testnet.sonic.game"
 wallet = "/Users/kristoffer/.config/solana/id.json"
 
 [scripts]

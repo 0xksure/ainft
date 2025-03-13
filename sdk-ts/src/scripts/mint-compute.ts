@@ -1,4 +1,4 @@
-import { getProgram, getPayer, findMasterMintPDA, findAppAinftPDA, findComputeMintPDA } from '../utils';
+import { getProgram, findMasterMintPDA, findAppAinftPDA, findComputeMintPDA } from '../utils';
 import { BN } from '@coral-xyz/anchor';
 import { Logger } from '../utils/logger';
 import { Keypair, PublicKey } from '@solana/web3.js';

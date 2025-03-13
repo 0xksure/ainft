@@ -1,301 +1,182 @@
 'use client';
 
-import Link from 'next/link';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
+import { useWallet } from '@solana/wallet-adapter-react';
 import PageLayout from './components/PageLayout';
-import { Button } from './components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from './components/ui/card';
-import { Badge } from './components/ui/badge';
+import { cn } from './components/ui/utils';
+import { ArrowRight, Brain, MessageSquare, Edit, Cpu } from 'lucide-react';
 
-// Animation variants
-const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-        opacity: 1,
-        transition: {
-            staggerChildren: 0.1
-        }
-    }
-};
+// Feature card component
+interface FeatureCardProps {
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    delay: number;
+}
 
-const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-        opacity: 1,
-        y: 0,
-        transition: { duration: 0.5 }
-    }
-};
+const FeatureCard = ({ icon, title, description, delay }: FeatureCardProps) => (
+    <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay }}
+        className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6 hover:border-gray-600 transition-all"
+    >
+        <div className="bg-gradient-to-br from-purple-600 to-blue-600 w-12 h-12 rounded-lg flex items-center justify-center mb-4">
+            {icon}
+        </div>
+        <h3 className="text-xl font-bold mb-2">{title}</h3>
+        <p className="text-gray-300">{description}</p>
+    </motion.div>
+);
 
 export default function Home() {
+    const { publicKey } = useWallet();
+    const [isClient, setIsClient] = useState(false);
+
+    // Set isClient to true when component mounts (client-side only)
+    useEffect(() => {
+        setIsClient(true);
+    }, []);
+
     return (
         <PageLayout>
             {/* Hero Section */}
-            <section className="py-12 text-center">
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.7 }}
-                >
-                    <h1 className="text-5xl font-bold mb-6">
-                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-sky-400 to-blue-500">
-                            AI NFT Platform
-                        </span>
-                    </h1>
-                </motion.div>
+            <section className="relative">
+                {/* Background gradient */}
+                <div className="absolute inset-0 bg-gradient-to-b from-purple-900/20 to-transparent pointer-events-none" />
 
-                <motion.p
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.7, delay: 0.2 }}
-                    className="text-xl mb-8 max-w-3xl mx-auto text-gray-300"
-                >
-                    Mint, own, and interact with unique AI characters on the Solana blockchain.
-                    Each AI NFT comes with its own personality and capabilities.
-                </motion.p>
+                <div className="container mx-auto px-4 py-20 md:py-32">
+                    <div className="max-w-3xl mx-auto text-center">
+                        <motion.h1
+                            initial={{ opacity: 0, y: -20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.7 }}
+                            className="text-4xl md:text-6xl font-bold mb-6"
+                        >
+                            Create, Own, and Chat with{' '}
+                            <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-500 to-blue-500">
+                                AI NFTs
+                            </span>
+                        </motion.h1>
 
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.7, delay: 0.4 }}
-                    className="flex flex-wrap justify-center gap-4 mb-16"
-                >
-                    <Link href="/mint">
-                        <Button size="lg" className="group">
-                            Mint AI NFT
-                            <motion.span
-                                initial={{ width: 0 }}
-                                whileHover={{ width: '100%' }}
-                                className="absolute bottom-0 left-0 h-0.5 bg-white/30"
-                            />
-                        </Button>
-                    </Link>
+                        <motion.p
+                            initial={{ opacity: 0, y: -20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.7, delay: 0.1 }}
+                            className="text-xl text-gray-300 mb-8"
+                        >
+                            Mint your own AI characters as NFTs on Solana. Customize their personality, knowledge, and behavior.
+                        </motion.p>
 
-                    <Link href="/manage">
-                        <Button variant="secondary" size="lg">
-                            Manage NFTs
-                        </Button>
-                    </Link>
+                        <motion.div
+                            initial={{ opacity: 0, y: -20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.7, delay: 0.2 }}
+                            className="flex flex-col sm:flex-row gap-4 justify-center"
+                        >
+                            <Link
+                                href="/mint"
+                                className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg font-medium hover:from-purple-700 hover:to-blue-700 transition-all flex items-center justify-center"
+                            >
+                                Create AI NFT <ArrowRight size={18} className="ml-2" />
+                            </Link>
 
-                    <Link href="/chat">
-                        <Button variant="secondary" size="lg">
-                            Chat with AI
-                        </Button>
-                    </Link>
-
-                    <Link href="/execution-client">
-                        <Button variant="secondary" size="lg">
-                            Register Execution Client
-                        </Button>
-                    </Link>
-                </motion.div>
+                            <Link
+                                href="/chat"
+                                className="px-6 py-3 bg-gray-800 border border-gray-700 rounded-lg font-medium hover:bg-gray-700 transition-all flex items-center justify-center"
+                            >
+                                Chat with AI NFT <MessageSquare size={18} className="ml-2" />
+                            </Link>
+                        </motion.div>
+                    </div>
+                </div>
             </section>
 
-            {/* Featured AI Characters Section */}
-            <section className="py-12">
-                <motion.h2
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.7 }}
-                    className="text-3xl font-bold mb-8 text-center"
-                >
-                    <span className="bg-clip-text text-transparent bg-gradient-to-r from-sky-400 to-blue-500">
-                        Featured AI Characters
-                    </span>
-                </motion.h2>
+            {/* Features Section */}
+            <section className="py-16 bg-black/50 backdrop-blur-sm">
+                <div className="container mx-auto px-4">
+                    <motion.h2
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5 }}
+                        className="text-3xl font-bold text-center mb-12"
+                    >
+                        Key Features
+                    </motion.h2>
 
-                <motion.div
-                    variants={containerVariants}
-                    initial="hidden"
-                    animate="visible"
-                    className="grid grid-cols-1 md:grid-cols-3 gap-8"
-                >
-                    {/* Code Assistant Card */}
-                    <motion.div variants={itemVariants}>
-                        <Card className="h-full overflow-hidden group">
-                            <div className="h-48 bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center relative overflow-hidden">
-                                <motion.div
-                                    initial={{ scale: 1 }}
-                                    whileHover={{ scale: 1.05 }}
-                                    transition={{ duration: 0.3 }}
-                                    className="absolute inset-0 w-full h-full"
-                                >
-                                    <div className="absolute inset-0 bg-[url('/code-assistant.png')] bg-cover bg-center opacity-70 group-hover:opacity-90 transition-opacity duration-300" />
-                                </motion.div>
-                                <span className="text-2xl font-bold relative z-10 text-white drop-shadow-lg">Code Assistant</span>
-                            </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <FeatureCard
+                            icon={<Brain size={24} className="text-white" />}
+                            title="Customizable AI"
+                            description="Create AI characters with unique personalities, knowledge, and capabilities tailored to your needs."
+                            delay={0.1}
+                        />
 
-                            <CardHeader>
-                                <CardTitle>Code Assistant</CardTitle>
-                                <CardDescription>Expert in programming and software development</CardDescription>
-                            </CardHeader>
+                        <FeatureCard
+                            icon={<MessageSquare size={24} className="text-white" />}
+                            title="Interactive Chat"
+                            description="Engage in natural conversations with your AI NFTs through a user-friendly chat interface."
+                            delay={0.2}
+                        />
 
-                            <CardContent>
-                                <div className="flex flex-wrap gap-2 mb-4">
-                                    <Badge>Programming</Badge>
-                                    <Badge>Problem Solving</Badge>
-                                    <Badge>Code Review</Badge>
-                                </div>
-                                <p className="text-sm text-gray-400">
-                                    Get help with coding tasks, debugging, and software architecture. Your AI programming partner.
-                                </p>
-                            </CardContent>
+                        <FeatureCard
+                            icon={<Edit size={24} className="text-white" />}
+                            title="Full Ownership"
+                            description="Own your AI characters as NFTs on the Solana blockchain with full control over their development."
+                            delay={0.3}
+                        />
 
-                            <CardFooter>
-                                <Button className="w-full">Use Template</Button>
-                            </CardFooter>
-                        </Card>
-                    </motion.div>
-
-                    {/* Creative Writer Card */}
-                    <motion.div variants={itemVariants}>
-                        <Card className="h-full overflow-hidden group">
-                            <div className="h-48 bg-gradient-to-r from-pink-500 to-red-500 flex items-center justify-center relative overflow-hidden">
-                                <motion.div
-                                    initial={{ scale: 1 }}
-                                    whileHover={{ scale: 1.05 }}
-                                    transition={{ duration: 0.3 }}
-                                    className="absolute inset-0 w-full h-full"
-                                >
-                                    <div className="absolute inset-0 bg-[url('/creative-writer.png')] bg-cover bg-center opacity-70 group-hover:opacity-90 transition-opacity duration-300" />
-                                </motion.div>
-                                <span className="text-2xl font-bold relative z-10 text-white drop-shadow-lg">Creative Writer</span>
-                            </div>
-
-                            <CardHeader>
-                                <CardTitle>Creative Writer</CardTitle>
-                                <CardDescription>Specialized in creative writing and storytelling</CardDescription>
-                            </CardHeader>
-
-                            <CardContent>
-                                <div className="flex flex-wrap gap-2 mb-4">
-                                    <Badge>Writing</Badge>
-                                    <Badge>Storytelling</Badge>
-                                    <Badge>Creativity</Badge>
-                                </div>
-                                <p className="text-sm text-gray-400">
-                                    Craft compelling stories, develop characters, and explore creative writing with AI assistance.
-                                </p>
-                            </CardContent>
-
-                            <CardFooter>
-                                <Button className="w-full">Use Template</Button>
-                            </CardFooter>
-                        </Card>
-                    </motion.div>
-
-                    {/* Data Analyst Card */}
-                    <motion.div variants={itemVariants}>
-                        <Card className="h-full overflow-hidden group">
-                            <div className="h-48 bg-gradient-to-r from-green-500 to-teal-500 flex items-center justify-center relative overflow-hidden">
-                                <motion.div
-                                    initial={{ scale: 1 }}
-                                    whileHover={{ scale: 1.05 }}
-                                    transition={{ duration: 0.3 }}
-                                    className="absolute inset-0 w-full h-full"
-                                >
-                                    <div className="absolute inset-0 bg-[url('/data-analyst.png')] bg-cover bg-center opacity-70 group-hover:opacity-90 transition-opacity duration-300" />
-                                </motion.div>
-                                <span className="text-2xl font-bold relative z-10 text-white drop-shadow-lg">Data Analyst</span>
-                            </div>
-
-                            <CardHeader>
-                                <CardTitle>Data Analyst</CardTitle>
-                                <CardDescription>Expert in data analysis and visualization</CardDescription>
-                            </CardHeader>
-
-                            <CardContent>
-                                <div className="flex flex-wrap gap-2 mb-4">
-                                    <Badge>Data Analysis</Badge>
-                                    <Badge>Statistics</Badge>
-                                    <Badge>Visualization</Badge>
-                                </div>
-                                <p className="text-sm text-gray-400">
-                                    Transform raw data into insights with advanced analysis techniques and visualization tools.
-                                </p>
-                            </CardContent>
-
-                            <CardFooter>
-                                <Button className="w-full">Use Template</Button>
-                            </CardFooter>
-                        </Card>
-                    </motion.div>
-                </motion.div>
-            </section>
-
-            {/* How It Works Section */}
-            <section className="py-12">
-                <motion.h2
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.7 }}
-                    className="text-3xl font-bold mb-12 text-center"
-                >
-                    <span className="bg-clip-text text-transparent bg-gradient-to-r from-sky-400 to-blue-500">
-                        How It Works
-                    </span>
-                </motion.h2>
-
-                <motion.div
-                    variants={containerVariants}
-                    initial="hidden"
-                    animate="visible"
-                    className="grid grid-cols-1 md:grid-cols-3 gap-8"
-                >
-                    <motion.div variants={itemVariants} className="text-center">
-                        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 h-full">
-                            <div className="w-16 h-16 bg-sky-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <span className="text-2xl font-bold">1</span>
-                            </div>
-                            <h3 className="text-xl font-bold mb-3">Mint Your AI NFT</h3>
-                            <p className="text-gray-300">
-                                Choose a template or create a custom AI character with unique traits and capabilities.
-                            </p>
-                        </div>
-                    </motion.div>
-
-                    <motion.div variants={itemVariants} className="text-center">
-                        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 h-full">
-                            <div className="w-16 h-16 bg-sky-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <span className="text-2xl font-bold">2</span>
-                            </div>
-                            <h3 className="text-xl font-bold mb-3">Interact & Chat</h3>
-                            <p className="text-gray-300">
-                                Engage with your AI NFT through chat, getting responses based on its unique personality.
-                            </p>
-                        </div>
-                    </motion.div>
-
-                    <motion.div variants={itemVariants} className="text-center">
-                        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 h-full">
-                            <div className="w-16 h-16 bg-sky-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <span className="text-2xl font-bold">3</span>
-                            </div>
-                            <h3 className="text-xl font-bold mb-3">Earn & Trade</h3>
-                            <p className="text-gray-300">
-                                Run an execution client to earn rewards or trade your AI NFTs on the marketplace.
-                            </p>
-                        </div>
-                    </motion.div>
-                </motion.div>
+                        <FeatureCard
+                            icon={<Cpu size={24} className="text-white" />}
+                            title="Execution Clients"
+                            description="Run your own execution client to process AI interactions and earn rewards for computation."
+                            delay={0.4}
+                        />
+                    </div>
+                </div>
             </section>
 
             {/* CTA Section */}
-            <section className="py-12">
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.7 }}
-                    className="bg-gradient-to-r from-sky-900/50 to-blue-900/50 backdrop-blur-sm rounded-xl p-12 border border-sky-800/50 text-center"
-                >
-                    <h2 className="text-3xl font-bold mb-4">Ready to Create Your AI NFT?</h2>
-                    <p className="text-xl mb-8 max-w-2xl mx-auto text-gray-300">
-                        Join the future of AI ownership on the Solana blockchain.
-                    </p>
-                    <Link href="/mint">
-                        <Button size="lg" className="px-8">Get Started</Button>
-                    </Link>
-                </motion.div>
+            <section className="py-20">
+                <div className="container mx-auto px-4">
+                    <div className="max-w-3xl mx-auto text-center">
+                        <motion.h2
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.5 }}
+                            viewport={{ once: true }}
+                            className="text-3xl font-bold mb-6"
+                        >
+                            Ready to Create Your AI NFT?
+                        </motion.h2>
+
+                        <motion.p
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.5, delay: 0.1 }}
+                            viewport={{ once: true }}
+                            className="text-xl text-gray-300 mb-8"
+                        >
+                            Join the future of AI ownership on the Solana blockchain.
+                        </motion.p>
+
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.5, delay: 0.2 }}
+                            viewport={{ once: true }}
+                        >
+                            <Link
+                                href="/mint"
+                                className="px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg font-medium hover:from-purple-700 hover:to-blue-700 transition-all inline-flex items-center"
+                            >
+                                Get Started <ArrowRight size={18} className="ml-2" />
+                            </Link>
+                        </motion.div>
+                    </div>
+                </div>
             </section>
         </PageLayout>
     );

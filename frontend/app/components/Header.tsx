@@ -25,8 +25,8 @@ const navItems = [
     { name: 'Execution Client', href: '/execution-client' },
 ];
 
-// Define network configuration with colors
-const networkConfig = {
+// Define network configuration with colors and proper typing
+const networkConfig: Record<Network, { name: string; color: string }> = {
     'mainnet-beta': {
         name: 'Mainnet Beta',
         color: 'bg-green-500'
@@ -42,6 +42,10 @@ const networkConfig = {
     'localnet': {
         name: 'Localnet',
         color: 'bg-orange-500'
+    },
+    'sonic-devnet': {
+        name: 'Sonic Devnet',
+        color: 'bg-pink-500'
     }
 };
 
@@ -184,12 +188,12 @@ export default function Header() {
                                         >
                                             <span className={cn(
                                                 "h-2 w-2 rounded-full mr-1",
-                                                networkConfig[selectedNetwork]?.color || 'bg-gray-500'
+                                                networkConfig[selectedNetwork as Network].color || 'bg-gray-500'
                                             )} />
                                             <span>
                                                 {networkSwitching
                                                     ? "Switching..."
-                                                    : (networkConfig[selectedNetwork]?.name || selectedNetwork)
+                                                    : (networkConfig[selectedNetwork as Network].name || selectedNetwork)
                                                 }
                                             </span>
                                             <ChevronDown size={16} />
@@ -204,9 +208,9 @@ export default function Header() {
                                             >
                                                 <span className={cn(
                                                     "h-2 w-2 rounded-full mr-2",
-                                                    networkConfig[network]?.color || 'bg-gray-500'
+                                                    networkConfig[network as Network].color
                                                 )} />
-                                                {networkConfig[network]?.name || network}
+                                                {networkConfig[network as Network].name}
                                                 {selectedNetwork === network as Network && (
                                                     <Check size={16} className="ml-auto" />
                                                 )}
@@ -296,7 +300,7 @@ export default function Header() {
                                             disabled={networkSwitching}
                                             className={cn(
                                                 'flex items-center w-full text-left px-3 py-1.5 rounded-md text-sm',
-                                                selectedNetwork === network as Network
+                                                selectedNetwork === network
                                                     ? 'bg-gray-700 text-white'
                                                     : 'text-gray-300 hover:bg-gray-700 hover:text-white',
                                                 networkSwitching && 'opacity-50 cursor-not-allowed'
@@ -304,10 +308,10 @@ export default function Header() {
                                         >
                                             <span className={cn(
                                                 "h-2 w-2 rounded-full mr-2",
-                                                networkConfig[network]?.color || 'bg-gray-500'
+                                                networkConfig[network as Network].color
                                             )} />
-                                            {networkConfig[network]?.name || network}
-                                            {selectedNetwork === network as Network && (
+                                            {networkConfig[network as Network].name}
+                                            {selectedNetwork === network && (
                                                 <Check size={16} className="ml-auto" />
                                             )}
                                         </button>
