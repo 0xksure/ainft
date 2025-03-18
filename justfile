@@ -16,6 +16,9 @@ start-local:
 init: 
     cd sdk-ts && source .env.example && pnpm run create-app && pnpm run create-compute-mint && pnpm run mint-compute 10000000000 ${WALLET_ADDRESS} 
 
+mint-compute:
+    cd sdk-ts && source .env.example && pnpm run mint-compute 10000000000 ${WALLET_ADDRESS} 
+
 # Build the program
 build:
     anchor build

@@ -339,17 +339,42 @@ export async function sendMessage(
     messageText: string
 ) {
     try {
-        if (!wallet) throw new Error('Wallet not initialized');
-        if (!wallet.publicKey) throw new Error('Wallet public key not initialized');
-        if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
-        const aiCharacter = await program.account.aiCharacterNft.fetch(aiNftAddress);
-        // Derive the compute token account for the AI character
-        const [aiCharacterComputeTokenAccount] = PublicKey.findProgramAddressSync(
-            [Buffer.from("compute_token"), aiCharacter.characterNftMint.toBuffer()],
-            program.programId
-        );
-        const messageCount = (await program.account.aiCharacterNft.fetch(aiNftAddress)).messageCount;
+        if (!wallet.publicKey) {
+            throw new Error("Wallet not connected");
+        }
+
+        if (!wallet.signTransaction) {
+            throw new Error("Wallet does not support signing transactions");
+        }
+
+        // Find necessary PDAs
         const [appAinftPda] = findAppAinftPDA();
+        const [computeMint] = findComputeMintPDA();
+        
+        // Get the AI character's compute token account
+        const aiCharacterComputeTokenAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: aiNftAddress
+        });
+
+        // Check if the compute token account exists
+        const accountInfo = await connection.getAccountInfo(aiCharacterComputeTokenAccount);
+        if (!accountInfo) {
+            console.log("Compute token account does not exist, creating it now...");
+            
+            // Create the compute token account
+            await createAiCharacterComputeAccount(
+                program,
+                wallet,
+                connection,
+                aiNftAddress
+            );
+            
+            console.log("Compute token account created successfully");
+        }
+
+        // Get message count for PDA seed
+        const messageCount = (await program.account.aiCharacterNft.fetch(aiNftAddress)).messageCount;
         const [messageAccount] = PublicKey.findProgramAddressSync(
             [
                 Buffer.from("message"),
@@ -400,39 +425,152 @@ export async function sendMessage(
             throw new Error("Transaction failed to confirm");
         }
 
-        // Wait for confirmation
-        await program.provider.connection.confirmTransaction({
-            signature,
-            blockhash,
-            lastValidBlockHeight,
-        });
-
         return {
-            txId: signature,
-            messageAccount: messageAccount,
+            signature,
+            messageAccount
         };
     } catch (error) {
-        console.error("Error sending message:", error);
+        console.error('Error sending message:', error);
         throw error;
     }
-}
+};
+
+// Fetch all execution clients
+export const fetchAllExecutionClients = async (
+    program: Program<Ainft>,
+    connection: Connection | null
+) => {
+    if (!program) throw new Error('Program not initialized');
+    if (!connection) throw new Error('Connection not initialized');
+
+    try {
+        // Get all accounts of type ExecutionClient
+        const executionClientAccounts = await program.account.executionClient.all();
+        
+        // Map the accounts to a more usable format
+        const executionClients = executionClientAccounts.map(account => {
+            const data = account.account;
+            return {
+                publicKey: account.publicKey,
+                aiNft: data.aiNft,
+                authority: data.authority,
+                computeTokenAddress: data.computeTokenAddress,
+                gas: data.gas.toNumber(),
+                computeMint: data.computeMint,
+                liquidStakingTokenMint: data.liquidStakingTokenMint,
+                stakePoolTokenAccount: data.stakePoolTokenAccount,
+                totalCompute: data.totalCompute.toNumber(),
+                totalStaked: data.totalStaked.toNumber(),
+                totalProcessed: data.totalProcessed.toNumber(),
+                stakerFeeShare: data.stakerFeeShare,
+                active: data.active,
+                supportedMessageTypes: data.supportedMessageTypes,
+            };
+        });
+
+        return executionClients;
+    } catch (error) {
+        console.error('Error fetching execution clients:', error);
+        throw error;
+    }
+};
+
+// Fetch execution client by authority
+export const fetchExecutionClientByAuthority = async (
+    program: Program<Ainft>,
+    authority: PublicKey
+) => {
+    if (!program) throw new Error('Program not initialized');
+
+    try {
+        // Find the app ainft PDA
+        const [appAinftPda] = findAppAinftPDA();
+        
+        // Find the execution client PDA
+        const [executionClientPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from('execution_client'), appAinftPda.toBuffer(), authority.toBuffer()],
+            program.programId
+        );
+
+        // Fetch the execution client account
+        const executionClient = await program.account.executionClient.fetch(executionClientPda);
+        
+        return {
+            publicKey: executionClientPda,
+            aiNft: executionClient.aiNft,
+            authority: executionClient.authority,
+            computeTokenAddress: executionClient.computeTokenAddress,
+            gas: executionClient.gas.toNumber(),
+            computeMint: executionClient.computeMint,
+            liquidStakingTokenMint: executionClient.liquidStakingTokenMint,
+            stakePoolTokenAccount: executionClient.stakePoolTokenAccount,
+            totalCompute: executionClient.totalCompute.toNumber(),
+            totalStaked: executionClient.totalStaked.toNumber(),
+            totalProcessed: executionClient.totalProcessed.toNumber(),
+            stakerFeeShare: executionClient.stakerFeeShare,
+            active: executionClient.active,
+            supportedMessageTypes: executionClient.supportedMessageTypes,
+        };
+    } catch (error) {
+        console.error('Error fetching execution client:', error);
+        return null;
+    }
+};
 
 // Register an execution client
 export const registerExecutionClient = async (
-    program: any,
-    wallet: PublicKey,
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
     gas: number,
     supportedMessageTypes: string[],
     stakerFeeShare: number
 ) => {
     if (!program) throw new Error('Program not initialized');
-
+    if (!wallet) throw new Error('Wallet not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet public key not initialized');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
     try {
+        // Find the app ainft PDA
+        const [appAinftPda] = findAppAinftPDA();
+
         // Find the execution client PDA
         const [executionClientPda, executionClientBump] = PublicKey.findProgramAddressSync(
-            [Buffer.from('execution_client'), wallet.toBuffer()],
+            [Buffer.from('execution_client'), appAinftPda.toBuffer(), wallet.publicKey.toBuffer()],
             program.programId
         );
+
+        // Find the compute mint PDA
+        const [computeMint] = findComputeMintPDA();
+
+        // Find the compute token account for the execution client
+        const computeTokenAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: executionClientPda
+        });
+
+        // Find the staked token account for the app ainft
+        const stakedTokenAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: appAinftPda
+        });
+
+        // Find the staked mint PDA
+        const [stakedMint] = PublicKey.findProgramAddressSync(
+            [Buffer.from('staked_mint'), appAinftPda.toBuffer(), executionClientPda.toBuffer()],
+            program.programId
+        );
+
+        // Create an accounts object with all required accounts
+        const accounts = {
+            aiNft: appAinftPda,
+            executionClient: executionClientPda,
+            computeTokenAccount: computeTokenAccount,
+            stakedTokenAccount: stakedTokenAccount,
+            computeMint: computeMint,
+            signer: wallet.publicKey,
+            stakedMint: stakedMint,
+        };
 
         // Call the register_execution_client instruction
         const tx = await program.methods
@@ -442,13 +580,36 @@ export const registerExecutionClient = async (
                 stakerFeeShare,
                 executionClientBump
             )
-            .accounts({
-                executionClient: executionClientPda,
-                authority: wallet,
-                // Other accounts would be derived based on the program's requirements
-                systemProgram: web3.SystemProgram.programId,
-            })
-            .rpc();
+            .accounts(accounts)
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+        // 3. Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [tx]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash: blockhash,
+            lastValidBlockHeight: lastValidBlockHeight
+        });
+        if (confirmation.value.err) {
+            throw new Error("Transaction failed to confirm");
+        }
+
+        // Wait for confirmation
+        await program.provider.connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight,
+        });
 
         console.log('Execution client registered with transaction:', tx);
         console.log('Execution client address:', executionClientPda.toString());
@@ -459,6 +620,56 @@ export const registerExecutionClient = async (
         };
     } catch (error) {
         console.error('Error registering execution client:', error);
+        throw error;
+    }
+};
+
+// Update execution client configuration
+export const updateExecutionClientConfig = async (
+    program: Program<Ainft>,
+    wallet: PublicKey,
+    gas: number,
+    executionClientPublicKey?: PublicKey
+) => {
+    if (!program) throw new Error('Program not initialized');
+
+    try {
+        let executionClientPda: PublicKey;
+        
+        if (executionClientPublicKey) {
+            // Use the provided execution client public key
+            executionClientPda = executionClientPublicKey;
+        } else {
+            // Find the execution client PDA based on the wallet
+            const [appAinftPda] = findAppAinftPDA();
+            [executionClientPda] = PublicKey.findProgramAddressSync(
+                [Buffer.from('execution_client'), appAinftPda.toBuffer(), wallet.toBuffer()],
+                program.programId
+            );
+        }
+
+        // Create an accounts object with all required accounts
+        const accounts = {
+            executionClient: executionClientPda,
+            authority: wallet,
+        };
+
+        // Call the update_execution_client_config instruction
+        const tx = await program.methods
+            .updateExecutionClientConfig(
+                new BN(gas)
+            )
+            .accounts(accounts)
+            .rpc();
+
+        console.log('Execution client config updated with transaction:', tx);
+
+        return {
+            txId: tx,
+            executionClientAddress: executionClientPda,
+        };
+    } catch (error) {
+        console.error('Error updating execution client config:', error);
         throw error;
     }
 };
@@ -520,6 +731,52 @@ export const unstakeCompute = async (
     } catch (error) {
         console.error('Error unstaking compute tokens:', error);
         throw error;
+    }
+};
+
+// Get compute token balance for a wallet
+export const getComputeTokenBalance = async (
+    connection: Connection,
+    walletPublicKey: PublicKey
+): Promise<number> => {
+    try {
+        console.log('Fetching compute token balance for wallet:', walletPublicKey.toString());
+        
+        // Find the compute mint PDA
+        const [computeMint] = findComputeMintPDA();
+        console.log('Compute token mint address:', computeMint.toString());
+        
+        // Find the associated token account for the wallet
+        const tokenAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: walletPublicKey
+        });
+        console.log('Associated token address:', tokenAccount.toString());
+        
+        // Check if the token account exists
+        const accountInfo = await connection.getAccountInfo(tokenAccount);
+        if (!accountInfo) {
+            console.log('Token account does not exist, returning 0 balance');
+            return 0;
+        }
+        
+        try {
+            // Get the token account balance
+            const tokenAmount = await connection.getTokenAccountBalance(tokenAccount);
+            console.log('Token amount data:', tokenAmount);
+            
+            // Convert to number and return
+            const balance = tokenAmount.value.uiAmount || 0;
+            console.log('Compute token balance:', balance);
+            return balance;
+        } catch (error) {
+            console.error('Error getting token balance:', error);
+            return 0;
+        }
+    } catch (error) {
+        console.error('Error in getComputeTokenBalance:', error);
+        // Return 0 instead of throwing to prevent UI errors
+        return 0;
     }
 };
 
@@ -600,14 +857,16 @@ export async function getMessagesForAiNft(
     }
 }
 
-export async function fetchAiNfts(program, connection) {
+export async function fetchAiNfts(
+    program: Program<any>,
+    connection: Connection
+) {
     try {
         const allNfts = await program.account.aiCharacterNft.all();
-        const { metadata: { Metadata } } = programs;
-
+        
         // Transform the data to match our AiNft interface
         const formattedNfts = await Promise.all(
-            allNfts.map(async (item) => {
+            allNfts.map(async (item: any) => {
                 try {
                     // Ensure the address is always a string
                     const nftAddress = item.publicKey.toString();
@@ -615,11 +874,16 @@ export async function fetchAiNfts(program, connection) {
                     // Log for debugging
                     console.log("Processing NFT with address:", nftAddress);
 
+                    // Convert byte arrays to readable strings
+                    const name = bytesToString(Array.from(item.account.name)) || 'Unnamed AI';
+                    const description = bytesToString(Array.from(item.account.characterConfig?.name)) || 'No description available';
+                    
                     return {
-                        address: nftAddress, // Explicitly set the address
-                        name: item.account.name || 'Unnamed AI',
-                        description: item.account.characterConfig?.description || 'No description available',
-                        // ... other fields
+                        address: nftAddress,
+                        name: name,
+                        description: description,
+                        imageUrl: 'https://via.placeholder.com/150', // Placeholder until we get the real image
+                        dateCreated: new Date(item.account.createdAt?.toNumber() || Date.now()),
                     };
                 } catch (err) {
                     console.error('Error processing NFT:', err);
@@ -628,7 +892,8 @@ export async function fetchAiNfts(program, connection) {
                         address: item.publicKey.toString(),
                         name: 'Error loading NFT',
                         description: 'Error loading NFT data',
-                        // ... default values for other fields
+                        imageUrl: 'https://via.placeholder.com/150',
+                        dateCreated: new Date(),
                     };
                 }
             })
@@ -639,4 +904,101 @@ export async function fetchAiNfts(program, connection) {
         console.error("Error fetching AI NFTs:", error);
         throw error;
     }
-} 
+}
+
+// Create AI character compute token account
+export const createAiCharacterComputeAccount = async (
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    aiCharacterMint: PublicKey
+) => {
+    try {
+        if (!wallet.publicKey) {
+            throw new Error("Wallet not connected");
+        }
+
+        // Find necessary PDAs
+        const [appAinftPda] = findAppAinftPDA();
+        const [computeMint] = findComputeMintPDA();
+        
+        // Get the AI character's compute token account
+        const aiCharacterComputeTokenAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: aiCharacterMint
+        });
+
+        // Create the instruction
+        const instruction = await program.methods
+            .createAiCharacterComputeAccount()
+            .accounts({
+                aiNft: appAinftPda,
+                aiCharacter: aiCharacterMint,
+                aiCharacterMint: aiCharacterMint,
+                computeMint: computeMint,
+                aiCharacterComputeTokenAccount: aiCharacterComputeTokenAccount,
+                payer: wallet.publicKey,
+            })
+            .instruction();
+
+        // Get latest blockhash
+        const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+
+        // Create a transaction
+        const transaction = new Transaction().add(instruction);
+        transaction.recentBlockhash = latestBlockhash.blockhash;
+        transaction.feePayer = wallet.publicKey;
+
+        // Sign and send the transaction
+        if (!wallet.signTransaction) {
+            throw new Error("Wallet does not support signing transactions");
+        }
+        const signedTransaction = await wallet.signTransaction(transaction);
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        
+        // Confirm the transaction
+        const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash: latestBlockhash.blockhash,
+            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
+        });
+
+        if (confirmation.value.err) {
+            throw new Error(`Transaction failed to confirm: ${confirmation.value.err}`);
+        }
+
+        console.log('AI character compute account created:', signature);
+        return {
+            signature,
+            aiCharacterComputeTokenAccount
+        };
+    } catch (error) {
+        console.error('Error creating AI character compute account:', error);
+        throw error;
+    }
+};
+
+// Check if AI character has a compute token account
+export const checkAiCharacterComputeAccount = async (
+    connection: Connection,
+    aiCharacterMint: PublicKey
+): Promise<boolean> => {
+    try {
+        // Find necessary PDAs
+        const [computeMint] = findComputeMintPDA();
+        const [aiCharacter] = findAiCharacterPDA(aiCharacterMint);
+
+        // Get the associated token address for the AI character's compute token account
+        const aiCharacterComputeTokenAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: aiCharacter
+        });
+
+        // Check if the account exists
+        const account = await connection.getAccountInfo(aiCharacterComputeTokenAccount);
+        return account !== null;
+    } catch (error) {
+        console.error('Error checking AI character compute account:', error);
+        return false;
+    }
+};

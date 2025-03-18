@@ -2,12 +2,9 @@ import * as anchor from "@coral-xyz/anchor";
 import { BN, Program } from "@coral-xyz/anchor";
 import { Ainft } from "../target/types/ainft";
 import { LAMPORTS_PER_SOL, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createTransferInstruction, MINT_SIZE, createInitializeMintInstruction, createMint, mintTo, getOrCreateAssociatedTokenAccount, getAssociatedTokenAddress } from "@solana/spl-token";
-import { assert, config } from "chai";
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { assert } from "chai";
 import { findMasterMintPDA, findAppAinftPDA, findComputeMintPDA, findMetadataPDA, findAiCharacterMintPDA, findAiCharacterPDA } from "../sdk-ts/src/utils";
-import mpl from "@metaplex-foundation/mpl-token-metadata";
-import { token } from "@coral-xyz/anchor/dist/cjs/utils";
-import { before } from "node:test";
 
 const METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 
@@ -741,13 +738,34 @@ describe("ainft", async () => {
 
     console.log("Sending message");
     const messageText = "Hello AI!";
+
+    // Create a token account for the sender to hold compute tokens
+    const senderComputeTokenAccount = await anchor.utils.token.associatedAddress({
+      mint: computeMint,
+      owner: payer.publicKey
+    });
+
+    // Mint some compute tokens to the sender for testing
+    await program.methods
+      .mintCompute(new BN(10))
+      .accounts({
+        aiNft: appAinftPda,
+        computeMint: computeMint,
+        recipientTokenAccount: senderComputeTokenAccount,
+        destinationUser: payer.publicKey,
+        authority: payer.publicKey,
+      })
+      .signers([payer])
+      .rpc();
+
     await program.methods
       .sendMessage(messageText)
       .accounts({
         message: messageAccount,
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
-        computeToken: aiCharacterComputeTokenAccount,
+        computeTokenReceiver: aiCharacterComputeTokenAccount,
+        senderComputeToken: senderComputeTokenAccount,
         sender: payer.publicKey,
       })
       .signers([payer])

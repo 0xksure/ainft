@@ -8,15 +8,21 @@ import { fetchDigitalAsset, mplTokenMetadata } from "@metaplex-foundation/mpl-to
 import { useState, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
-import { useAnchorProgram, updateCharacterConfig } from '../utils/anchor';
+import { 
+    useAnchorProgram, 
+    updateCharacterConfig, 
+    checkAiCharacterComputeAccount,
+    createAiCharacterComputeAccount
+} from '../utils/anchor';
 import { useNetworkStore } from '../stores/networkStore';
 import { bytesToString, bytesArrayToStrings } from '../utils/metadata';
 import PageLayout from '../components/PageLayout';
 import { motion } from 'framer-motion';
 import { cn } from '../components/ui/utils';
 import Link from 'next/link';
-import { Edit, MessageSquare, ExternalLink } from 'lucide-react';
+import { Edit, MessageSquare, ExternalLink, Coins } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useToast } from '../components/ui/toast';
 
 // AI NFT interface
 interface AiNft {
@@ -25,19 +31,23 @@ interface AiNft {
     description: string;
     imageUrl: string;
     dateCreated: Date;
+    hasComputeAccount?: boolean;
 }
 
 export default function ManagePage() {
     const { publicKey } = useWallet();
+    const wallet = useWallet();
     const { network, connection } = useNetworkStore();
     const { program, loading: programLoading, error: programError } = useAnchorProgram();
     const [isClient, setIsClient] = useState(false);
     const router = useRouter();
+    const { addToast } = useToast();
 
     // AI NFTs state
     const [aiNfts, setAiNfts] = useState<AiNft[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [creatingComputeAccount, setCreatingComputeAccount] = useState<{[key: string]: boolean}>({});
 
     // Set isClient to true when component mounts (client-side only)
     useEffect(() => {
@@ -46,7 +56,7 @@ export default function ManagePage() {
 
     // Load AI NFTs when wallet is connected
     useEffect(() => {
-        if (!isClient || !publicKey || !program) return;
+        if (!isClient || !publicKey || !program || !connection) return;
 
         const fetchAiNfts = async () => {
             try {
@@ -78,12 +88,19 @@ export default function ManagePage() {
                     const name = bytesToString(Array.from(item.account.name)) || 'Unnamed AI';
                     const description = bytesToString(Array.from(item.account.characterConfig.name)) || 'No description available';
                     
+                    // Check if the AI character has a compute token account
+                    const hasComputeAccount = await checkAiCharacterComputeAccount(
+                        connection,
+                        item.account.characterNftMint
+                    );
+                    
                     return {
                         address: item.publicKey.toString(),
                         name: name,
                         description: description,
                         imageUrl: tokenMetadata.data.data.uri,
                         dateCreated: new Date(item.account.createdAt?.toNumber() || Date.now()),
+                        hasComputeAccount
                     }
                 }));
 
@@ -97,12 +114,50 @@ export default function ManagePage() {
         };
 
         fetchAiNfts();
-    }, [isClient, publicKey, program]);
+    }, [isClient, publicKey, program, connection]);
 
     // Add this to your component to log NFT data
     useEffect(() => {
         console.log("NFTs data:", aiNfts);
     }, [aiNfts]);
+
+    // Function to create compute token account for an AI character
+    const handleCreateComputeAccount = async (nft: AiNft) => {
+        if (!program || !wallet.publicKey || !connection || !wallet.signTransaction) {
+            addToast('Wallet not connected or missing required capabilities', 'error');
+            return;
+        }
+        
+        try {
+            // Set loading state for this specific NFT
+            setCreatingComputeAccount(prev => ({ ...prev, [nft.address]: true }));
+            
+            // Create the compute token account
+            const result = await createAiCharacterComputeAccount(
+                program,
+                wallet,
+                connection,
+                new PublicKey(nft.address)
+            );
+            
+            // Update the NFT in the state to show it now has a compute account
+            setAiNfts(prev => 
+                prev.map(item => 
+                    item.address === nft.address 
+                        ? { ...item, hasComputeAccount: true } 
+                        : item
+                )
+            );
+            
+            addToast('Compute token account created successfully!', 'success');
+        } catch (error) {
+            console.error('Error creating compute token account:', error);
+            addToast(`Failed to create compute token account: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+        } finally {
+            // Clear loading state for this specific NFT
+            setCreatingComputeAccount(prev => ({ ...prev, [nft.address]: false }));
+        }
+    };
 
     // Only render wallet-dependent content on the client
     if (!isClient) {
@@ -233,6 +288,28 @@ export default function ManagePage() {
                                                 View <ExternalLink size={14} className="ml-1" />
                                             </a>
                                         </div>
+                                        
+                                        {/* Compute Account Status */}
+                                        <div className="mb-4 p-2 rounded bg-gray-700/50">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm text-gray-300 flex items-center">
+                                                    <Coins size={16} className="mr-2" />
+                                                    Compute Account:
+                                                </span>
+                                                {nft.hasComputeAccount ? (
+                                                    <span className="text-sm text-green-400 font-medium">Active</span>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => handleCreateComputeAccount(nft)}
+                                                        disabled={creatingComputeAccount[nft.address]}
+                                                        className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {creatingComputeAccount[nft.address] ? 'Creating...' : 'Create Account'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        
                                         <div className="flex space-x-2">
                                             <Link
                                                 href={`/chat?address=${nft.address}`}
@@ -264,4 +341,4 @@ export default function ManagePage() {
             </div>
         </PageLayout>
     );
-} 
+}
