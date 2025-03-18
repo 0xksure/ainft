@@ -10,11 +10,13 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { useAnchorProgram, updateCharacterConfig } from '../utils/anchor';
 import { useNetworkStore } from '../stores/networkStore';
+import { bytesToString, bytesArrayToStrings } from '../utils/metadata';
 import PageLayout from '../components/PageLayout';
 import { motion } from 'framer-motion';
 import { cn } from '../components/ui/utils';
 import Link from 'next/link';
 import { Edit, MessageSquare, ExternalLink } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 // AI NFT interface
 interface AiNft {
@@ -30,6 +32,7 @@ export default function ManagePage() {
     const { network, connection } = useNetworkStore();
     const { program, loading: programLoading, error: programError } = useAnchorProgram();
     const [isClient, setIsClient] = useState(false);
+    const router = useRouter();
 
     // AI NFTs state
     const [aiNfts, setAiNfts] = useState<AiNft[]>([]);
@@ -65,18 +68,24 @@ export default function ManagePage() {
 
 
                 // Transform the data to match our AiNft interface
-                const formattedNfts: AiNft[] = userNfts.map(async item => {
+                const formattedNfts: AiNft[] = await Promise.all(userNfts.map(async item => {
                     const metadataPDA = await Metadata.getPDA(item.account.characterNftMint);
                     const tokenMetadata = await Metadata.load(connection, metadataPDA);
                     console.log("tokenMetadata", tokenMetadata);
+                    console.log("item", item.publicKey.toString());
+                    
+                    // Convert byte arrays to readable strings
+                    const name = bytesToString(Array.from(item.account.name)) || 'Unnamed AI';
+                    const description = bytesToString(Array.from(item.account.characterConfig.name)) || 'No description available';
+                    
                     return {
                         address: item.publicKey.toString(),
-                        name: item.account.name || 'Unnamed AI',
-                        description: item.account.characterConfig.name.toString() || 'No description available',
+                        name: name,
+                        description: description,
                         imageUrl: tokenMetadata.data.data.uri,
                         dateCreated: new Date(item.account.createdAt?.toNumber() || Date.now()),
                     }
-                });
+                }));
 
                 setAiNfts(formattedNfts);
                 setLoading(false);
@@ -90,6 +99,11 @@ export default function ManagePage() {
         fetchAiNfts();
     }, [isClient, publicKey, program]);
 
+    // Add this to your component to log NFT data
+    useEffect(() => {
+        console.log("NFTs data:", aiNfts);
+    }, [aiNfts]);
+
     // Only render wallet-dependent content on the client
     if (!isClient) {
         return (
@@ -101,6 +115,17 @@ export default function ManagePage() {
             </PageLayout>
         );
     }
+
+    const handleEditClick = (nft) => {
+        console.log("Edit clicked for NFT:", nft);
+        console.log("NFT address:", nft?.address);
+
+        if (nft && nft.address) {
+            router.push(`/edit?address=${nft.address}`);
+        } else {
+            console.error("Cannot edit NFT: address is undefined", nft);
+        }
+    };
 
     return (
         <PageLayout>
@@ -217,7 +242,13 @@ export default function ManagePage() {
                                                 Chat
                                             </Link>
                                             <Link
-                                                href={`/edit?address=${nft.address}`}
+                                                href={nft?.address ? `/edit?address=${nft.address}` : '#'}
+                                                onClick={(e) => {
+                                                    if (!nft?.address) {
+                                                        e.preventDefault();
+                                                        console.error("Cannot edit NFT: address is undefined", nft);
+                                                    }
+                                                }}
                                                 className="flex-1 flex items-center justify-center px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition-colors"
                                             >
                                                 <Edit size={16} className="mr-2" />

@@ -34,7 +34,7 @@ interface AiNft {
 }
 
 export default function ChatPage() {
-    const { publicKey } = useWallet();
+    const wallet = useWallet();
     const { network, connection } = useNetworkStore();
     const { program, loading: programLoading, error: programError } = useAnchorProgram();
     const [isClient, setIsClient] = useState(false);
@@ -153,7 +153,7 @@ export default function ChatPage() {
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!publicKey || !program) {
+        if (!wallet.publicKey || !program || !connection) {
             addMessage({
                 id: Date.now().toString(),
                 content: 'Wallet not connected or program not loaded',
@@ -164,7 +164,17 @@ export default function ChatPage() {
             });
             return;
         }
-
+        if (!connection) {
+            addMessage({
+                id: Date.now().toString(),
+                content: 'Connection not loaded',
+                sender: 'ai',
+                timestamp: new Date(),
+                status: 'error',
+                error: 'Connection not loaded',
+            });
+            return;
+        }
         if (!isValidAddress) {
             addMessage({
                 id: Date.now().toString(),
@@ -202,7 +212,8 @@ export default function ChatPage() {
             // Send message to AI NFT
             const result = await sendMessage(
                 program,
-                publicKey,
+                wallet,
+                connection,
                 new PublicKey(aiNftAddress),
                 messageContent
             );
@@ -239,7 +250,7 @@ export default function ChatPage() {
             const formattedMessages: Message[] = fetchedMessages.map(msg => ({
                 id: msg.publicKey.toString(),
                 content: msg.account.content || '',
-                sender: msg.account.sender.equals(publicKey) ? 'user' : 'ai',
+                sender: msg.account.sender.equals(wallet.publicKey) ? 'user' : 'ai',
                 timestamp: new Date(msg.account.timestamp?.toNumber() || Date.now()),
                 status: 'sent',
             }));
@@ -306,7 +317,7 @@ export default function ChatPage() {
                 >
                     <h1 className="text-3xl font-bold mb-6">Chat with AI NFT</h1>
 
-                    {!publicKey ? (
+                    {!wallet.publicKey ? (
                         <div className="bg-gray-800 p-6 rounded-lg mb-8">
                             <p className="text-xl mb-4">Connect your wallet to chat with an AI NFT</p>
                             <p>Please use the wallet button in the header to connect.</p>

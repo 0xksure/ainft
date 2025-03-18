@@ -17,6 +17,14 @@ export function findAppAinftPDA(): [PublicKey, number] {
     );
 }
 
+export function findComputeMintPDA(): [PublicKey, number] {
+    const [appAinftPda] = findAppAinftPDA();
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from("compute_mint"), appAinftPda.toBuffer()],
+        AINFT_PROGRAM_ID
+    );
+}
+
 export function findAiCharacterPDA(
     aiCharacterMint: PublicKey
 ): [PublicKey, number] {
@@ -216,6 +224,11 @@ export const createAiNft = async (
             mint: aiCharacterMint,
             owner: wallet.publicKey
         });
+        console.log("payerAiCharacterTokenAccount", payerAiCharacterTokenAccount);
+        console.log("aiCharacter", aiCharacter);
+        console.log("aiCharacterMint", aiCharacterMint);
+        console.log("aiCharacterMetadata", aiCharacterMetadata);
+        console.log("appAinftPda", appAinftPda);
 
         // Call the create_app_ainft instruction
         console.log("program", program.methods);
@@ -234,13 +247,30 @@ export const createAiNft = async (
             })
             .instruction();
 
+        const [computeMint] = findComputeMintPDA();
+        const aiCharacterComputeTokenAccount = await anchor.utils.token.associatedAddress({
+            mint: computeMint,
+            owner: aiCharacter
+        });
+        const computeTokenAccount = await program.methods
+            .createAiCharacterComputeAccount()
+            .accounts({
+                aiNft: appAinftPda,
+                aiCharacter: aiCharacter,
+                computeMint: computeMint,
+                aiCharacterMint: aiCharacterMint,
+                aiCharacterMetadata: aiCharacterMetadata,
+                aiCharacterComputeTokenAccount: aiCharacterComputeTokenAccount,
+                payer: wallet.publicKey,
+            })
+            .instruction();
         const latestBlockhash = await connection.getLatestBlockhash('confirmed');
 
         // 3. Create a versioned transaction
         const messageV0 = new TransactionMessage({
             payerKey: wallet.publicKey,
             recentBlockhash: latestBlockhash.blockhash,
-            instructions: [ix]
+            instructions: [computeTokenAccount, ix]
         }).compileToV0Message();
 
         const transaction = new VersionedTransaction(messageV0);
@@ -302,53 +332,73 @@ export const mintAiNft = async (
 
 // Send a message to an AI NFT
 export async function sendMessage(
-    program: Program<any>,
-    sender: PublicKey,
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
     aiNftAddress: PublicKey,
     messageText: string
 ) {
     try {
-        // Generate a new keypair for the message account
-        const messageAccount = Keypair.generate();
-
-        // Fetch the AI character account associated with the NFT
+        if (!wallet) throw new Error('Wallet not initialized');
+        if (!wallet.publicKey) throw new Error('Wallet public key not initialized');
+        if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
         const aiCharacter = await program.account.aiCharacterNft.fetch(aiNftAddress);
-
         // Derive the compute token account for the AI character
         const [aiCharacterComputeTokenAccount] = PublicKey.findProgramAddressSync(
             [Buffer.from("compute_token"), aiCharacter.characterNftMint.toBuffer()],
             program.programId
         );
+        const messageCount = (await program.account.aiCharacterNft.fetch(aiNftAddress)).messageCount;
+        const [appAinftPda] = findAppAinftPDA();
+        const [messageAccount] = PublicKey.findProgramAddressSync(
+            [
+                Buffer.from("message"),
+                appAinftPda.toBuffer(),
+                aiNftAddress.toBuffer(),
+                new BN(messageCount).toArrayLike(Buffer, 'le', 8)  // Ensure correct byte format
+            ],
+            program.programId
+        );
+
+        console.log("aiCharacterComputeTokenAccount", aiCharacterComputeTokenAccount);
+        console.log("aiCharacter", aiNftAddress);
+        console.log("aiNft", appAinftPda);
+        console.log("sender", wallet.publicKey);
+        console.log("messageAccount", messageAccount);
+        console.log("computeToken", aiCharacterComputeTokenAccount);
 
         // Create the instruction
-        const instruction = await program.methods
+        const ix = await program.methods
             .sendMessage(messageText)
             .accounts({
-                message: messageAccount.publicKey,
-                aiNft: aiNftAddress,
-                aiCharacter: aiCharacter.publicKey,
+                message: messageAccount,
+                aiNft: appAinftPda,
+                aiCharacter: aiNftAddress,
                 computeToken: aiCharacterComputeTokenAccount,
-                sender: sender,
+                sender: wallet.publicKey,
             })
             .instruction();
 
         // Get the latest blockhash
         const { blockhash, lastValidBlockHeight } = await program.provider.connection.getLatestBlockhash();
+        // 3. Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
 
-        // Create a versioned transaction
-        const messageTransaction = new VersionedTransaction(
-            new TransactionMessage({
-                payerKey: sender,
-                recentBlockhash: blockhash,
-                instructions: [instruction],
-            }).compileToV0Message()
-        );
-
-        // Sign the transaction
-        messageTransaction.sign([messageAccount]);
-
-        // Send the transaction
-        const signature = await program.provider.connection.sendTransaction(messageTransaction);
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash: blockhash,
+            lastValidBlockHeight: lastValidBlockHeight
+        });
+        if (confirmation.value.err) {
+            throw new Error("Transaction failed to confirm");
+        }
 
         // Wait for confirmation
         await program.provider.connection.confirmTransaction({
@@ -359,7 +409,7 @@ export async function sendMessage(
 
         return {
             txId: signature,
-            messageAccount: messageAccount.publicKey,
+            messageAccount: messageAccount,
         };
     } catch (error) {
         console.error("Error sending message:", error);
@@ -546,6 +596,47 @@ export async function getMessagesForAiNft(
         });
     } catch (error) {
         console.error("Error fetching messages:", error);
+        throw error;
+    }
+}
+
+export async function fetchAiNfts(program, connection) {
+    try {
+        const allNfts = await program.account.aiCharacterNft.all();
+        const { metadata: { Metadata } } = programs;
+
+        // Transform the data to match our AiNft interface
+        const formattedNfts = await Promise.all(
+            allNfts.map(async (item) => {
+                try {
+                    // Ensure the address is always a string
+                    const nftAddress = item.publicKey.toString();
+
+                    // Log for debugging
+                    console.log("Processing NFT with address:", nftAddress);
+
+                    return {
+                        address: nftAddress, // Explicitly set the address
+                        name: item.account.name || 'Unnamed AI',
+                        description: item.account.characterConfig?.description || 'No description available',
+                        // ... other fields
+                    };
+                } catch (err) {
+                    console.error('Error processing NFT:', err);
+                    // Still return an object with an address even if other data is missing
+                    return {
+                        address: item.publicKey.toString(),
+                        name: 'Error loading NFT',
+                        description: 'Error loading NFT data',
+                        // ... default values for other fields
+                    };
+                }
+            })
+        );
+
+        return formattedNfts;
+    } catch (error) {
+        console.error("Error fetching AI NFTs:", error);
         throw error;
     }
 } 
