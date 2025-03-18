@@ -8,15 +8,25 @@ import { fetchDigitalAsset, mplTokenMetadata } from "@metaplex-foundation/mpl-to
 import { useState, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
-import { useAnchorProgram, updateCharacterConfig } from '../utils/anchor';
+import { 
+    useAnchorProgram, 
+    updateCharacterConfig, 
+    checkAiCharacterComputeAccount,
+    createAiCharacterComputeAccount,
+    fetchAllExecutionClients,
+    updateAiCharacterExecutionClient,
+    getAiCharacterComputeTokenBalance
+} from '../utils/anchor';
 import { useNetworkStore } from '../stores/networkStore';
 import { bytesToString, bytesArrayToStrings } from '../utils/metadata';
 import PageLayout from '../components/PageLayout';
+import CopyableAddress from '../components/CopyableAddress';
 import { motion } from 'framer-motion';
 import { cn } from '../components/ui/utils';
 import Link from 'next/link';
-import { Edit, MessageSquare, ExternalLink } from 'lucide-react';
+import { Edit, MessageSquare, ExternalLink, Coins, Server } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useToast } from '../components/ui/toast';
 
 // AI NFT interface
 interface AiNft {
@@ -25,28 +35,76 @@ interface AiNft {
     description: string;
     imageUrl: string;
     dateCreated: Date;
+    hasComputeAccount?: boolean;
+    executionClient?: string;
+    computeTokenBalance?: number;
+}
+
+// Execution client interface
+interface ExecutionClientData {
+    publicKey: PublicKey;
+    aiNft: PublicKey;
+    authority: PublicKey;
+    computeTokenAddress: PublicKey;
+    gas: number;
+    computeMint: PublicKey;
+    liquidStakingTokenMint: PublicKey;
+    stakePoolTokenAccount: PublicKey;
+    totalCompute: number;
+    totalStaked: number;
+    totalProcessed: number;
+    stakerFeeShare: number;
+    active: boolean;
+    supportedMessageTypes: string[];
 }
 
 export default function ManagePage() {
     const { publicKey } = useWallet();
+    const wallet = useWallet();
     const { network, connection } = useNetworkStore();
     const { program, loading: programLoading, error: programError } = useAnchorProgram();
     const [isClient, setIsClient] = useState(false);
     const router = useRouter();
+    const { addToast } = useToast();
 
     // AI NFTs state
     const [aiNfts, setAiNfts] = useState<AiNft[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [creatingComputeAccount, setCreatingComputeAccount] = useState<{[key: string]: boolean}>({});
+    
+    // Execution client state
+    const [executionClients, setExecutionClients] = useState<ExecutionClientData[]>([]);
+    const [loadingClients, setLoadingClients] = useState(false);
+    const [updatingExecutionClient, setUpdatingExecutionClient] = useState<{[key: string]: boolean}>({});
 
     // Set isClient to true when component mounts (client-side only)
     useEffect(() => {
         setIsClient(true);
     }, []);
 
+    // Load execution clients
+    useEffect(() => {
+        if (!isClient || !program || !connection) return;
+
+        const fetchClients = async () => {
+            try {
+                setLoadingClients(true);
+                const clients = await fetchAllExecutionClients(program, connection);
+                setExecutionClients(clients);
+            } catch (err) {
+                console.error('Error fetching execution clients:', err);
+            } finally {
+                setLoadingClients(false);
+            }
+        };
+
+        fetchClients();
+    }, [isClient, program, connection]);
+
     // Load AI NFTs when wallet is connected
     useEffect(() => {
-        if (!isClient || !publicKey || !program) return;
+        if (!isClient || !publicKey || !program || !connection) return;
 
         const fetchAiNfts = async () => {
             try {
@@ -78,12 +136,35 @@ export default function ManagePage() {
                     const name = bytesToString(Array.from(item.account.name)) || 'Unnamed AI';
                     const description = bytesToString(Array.from(item.account.characterConfig.name)) || 'No description available';
                     
+                    // Check if the AI character has a compute token account
+                    const hasComputeAccount = await checkAiCharacterComputeAccount(
+                        connection,
+                        item.account.characterNftMint
+                    );
+
+                    // Get the execution client if set
+                    const executionClient = item.account.executionClient ? 
+                        item.account.executionClient.toString() : 
+                        undefined;
+                    
+                    // Get compute token balance if the character has a compute account
+                    let computeTokenBalance = 0;
+                    if (hasComputeAccount) {
+                        computeTokenBalance = await getAiCharacterComputeTokenBalance(
+                            connection,
+                            item.account.characterNftMint
+                        );
+                    }
+                    
                     return {
                         address: item.publicKey.toString(),
                         name: name,
                         description: description,
                         imageUrl: tokenMetadata.data.data.uri,
-                        dateCreated: new Date(item.account.createdAt?.toNumber() || Date.now()),
+                        dateCreated: new Date((item.account as any).createdAt?.toNumber() || Date.now()),
+                        hasComputeAccount,
+                        executionClient,
+                        computeTokenBalance
                     }
                 }));
 
@@ -97,12 +178,89 @@ export default function ManagePage() {
         };
 
         fetchAiNfts();
-    }, [isClient, publicKey, program]);
+    }, [isClient, publicKey, program, connection]);
 
     // Add this to your component to log NFT data
     useEffect(() => {
         console.log("NFTs data:", aiNfts);
     }, [aiNfts]);
+
+    // Function to create compute token account for an AI character
+    const handleCreateComputeAccount = async (nft: AiNft) => {
+        if (!program || !wallet.publicKey || !connection || !wallet.signTransaction) {
+            addToast('Wallet not connected or missing required capabilities', 'error');
+            return;
+        }
+        
+        try {
+            // Set loading state for this specific NFT
+            setCreatingComputeAccount(prev => ({ ...prev, [nft.address]: true }));
+            
+            // Create the compute token account
+            const result = await createAiCharacterComputeAccount(
+                program,
+                wallet,
+                connection,
+                new PublicKey(nft.address)
+            );
+            
+            // Update the NFT in the state to show it now has a compute account
+            setAiNfts(prev => 
+                prev.map(item => 
+                    item.address === nft.address 
+                        ? { ...item, hasComputeAccount: true } 
+                        : item
+                )
+            );
+            
+            addToast('Compute token account created successfully!', 'success');
+        } catch (error) {
+            console.error('Error creating compute token account:', error);
+            addToast(`Failed to create compute token account: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+        } finally {
+            // Clear loading state for this specific NFT
+            setCreatingComputeAccount(prev => ({ ...prev, [nft.address]: false }));
+        }
+    };
+
+    // Function to update execution client for an AI character
+    const handleUpdateExecutionClient = async (nft: AiNft, client: ExecutionClientData) => {
+        if (!program || !wallet.publicKey || !connection || !wallet.signTransaction) {
+            addToast('Wallet not connected or missing required capabilities', 'error');
+            return;
+        }
+        
+        try {
+            // Set loading state for this specific NFT
+            setUpdatingExecutionClient(prev => ({ ...prev, [nft.address]: true }));
+            
+            // Update the execution client
+            const result = await updateAiCharacterExecutionClient(
+                program,
+                wallet,
+                connection,
+                new PublicKey(nft.address),
+                client.publicKey
+            );
+            
+            // Update the NFT in the state to show the updated execution client
+            setAiNfts(prev => 
+                prev.map(item => 
+                    item.address === nft.address 
+                        ? { ...item, executionClient: client.publicKey.toString() } 
+                        : item
+                )
+            );
+            
+            addToast('Execution client updated successfully!', 'success');
+        } catch (error) {
+            console.error('Error updating execution client:', error);
+            addToast(`Failed to update execution client: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+        } finally {
+            // Clear loading state for this specific NFT
+            setUpdatingExecutionClient(prev => ({ ...prev, [nft.address]: false }));
+        }
+    };
 
     // Only render wallet-dependent content on the client
     if (!isClient) {
@@ -116,7 +274,7 @@ export default function ManagePage() {
         );
     }
 
-    const handleEditClick = (nft) => {
+    const handleEditClick = (nft: AiNft) => {
         console.log("Edit clicked for NFT:", nft);
         console.log("NFT address:", nft?.address);
 
@@ -233,6 +391,94 @@ export default function ManagePage() {
                                                 View <ExternalLink size={14} className="ml-1" />
                                             </a>
                                         </div>
+                                        
+                                        {/* Compute Account Status */}
+                                        <div className="mb-4 p-2 rounded bg-gray-700/50">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm text-gray-300 flex items-center">
+                                                    <Coins size={16} className="mr-2" />
+                                                    Compute Account:
+                                                </span>
+                                                {nft.hasComputeAccount ? (
+                                                    <span className="text-sm text-green-400 font-medium">Active</span>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => handleCreateComputeAccount(nft)}
+                                                        disabled={creatingComputeAccount[nft.address]}
+                                                        className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {creatingComputeAccount[nft.address] ? 'Creating...' : 'Create Account'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                            
+                                            {/* Compute Token Balance (only shown if compute account exists) */}
+                                            {nft.hasComputeAccount && (
+                                                <div className="mt-2 flex justify-between items-center">
+                                                    <span className="text-sm text-gray-300">Token Balance:</span>
+                                                    <span className={cn(
+                                                        "text-sm font-medium px-2 py-1 rounded",
+                                                        (nft.computeTokenBalance !== undefined && nft.computeTokenBalance < 5) 
+                                                            ? "bg-red-900/70 text-red-200" 
+                                                            : "text-blue-400"
+                                                    )}>
+                                                        {nft.computeTokenBalance !== undefined ? `${nft.computeTokenBalance} tokens` : 'Loading...'}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Execution Client Status */}
+                                        <div className="mb-4 p-2 rounded bg-gray-700/50">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm text-gray-300 flex items-center">
+                                                    <Server size={16} className="mr-2" />
+                                                    Execution Client:
+                                                </span>
+                                                {nft.executionClient ? (
+                                                    <div className="flex items-center">
+                                                        <CopyableAddress address={nft.executionClient} />
+                                                        <button
+                                                            onClick={() => setAiNfts(prev => 
+                                                                prev.map(item => 
+                                                                    item.address === nft.address 
+                                                                        ? { ...item, executionClient: undefined } 
+                                                                        : item
+                                                                )
+                                                            )}
+                                                            className="text-xs bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded transition-colors"
+                                                        >
+                                                            Change
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <select
+                                                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-600 bg-gray-700 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md"
+                                                        value={nft.executionClient || ''}
+                                                        onChange={(e) => {
+                                                            const selectedClient = executionClients.find(
+                                                                (client) => client.publicKey.toString() === e.target.value
+                                                            );
+                                                            setAiNfts(prev => 
+                                                                prev.map(item => 
+                                                                    item.address === nft.address 
+                                                                    ? { ...item, executionClient: e.target.value } 
+                                                                    : item
+                                                                )
+                                                            );
+                                                        }}
+                                                    >
+                                                        <option value="">Select Execution Client</option>
+                                                        {executionClients.map((client) => (
+                                                            <option key={client.publicKey.toString()} value={client.publicKey.toString()}>
+                                                                {client.publicKey.toString().substring(0, 4)}...{client.publicKey.toString().substring(client.publicKey.toString().length - 4)}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                            </div>
+                                        </div>
+                                        
                                         <div className="flex space-x-2">
                                             <Link
                                                 href={`/chat?address=${nft.address}`}
@@ -264,4 +510,4 @@ export default function ManagePage() {
             </div>
         </PageLayout>
     );
-} 
+}

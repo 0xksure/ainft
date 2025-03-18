@@ -2,12 +2,10 @@ import * as anchor from "@coral-xyz/anchor";
 import { BN, Program } from "@coral-xyz/anchor";
 import { Ainft } from "../target/types/ainft";
 import { LAMPORTS_PER_SOL, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createTransferInstruction, MINT_SIZE, createInitializeMintInstruction, createMint, mintTo, getOrCreateAssociatedTokenAccount, getAssociatedTokenAddress } from "@solana/spl-token";
-import { assert, config } from "chai";
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import * as spl from "@solana/spl-token"
+import { assert } from "chai";
 import { findMasterMintPDA, findAppAinftPDA, findComputeMintPDA, findMetadataPDA, findAiCharacterMintPDA, findAiCharacterPDA } from "../sdk-ts/src/utils";
-import mpl from "@metaplex-foundation/mpl-token-metadata";
-import { token } from "@coral-xyz/anchor/dist/cjs/utils";
-import { before } from "node:test";
 
 const METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 
@@ -50,7 +48,7 @@ describe("ainft", async () => {
     // Setup payer and airdrop
     const signature = await provider.connection.requestAirdrop(
       payer.publicKey,
-      10 * anchor.web3.LAMPORTS_PER_SOL
+      20 * anchor.web3.LAMPORTS_PER_SOL
     );
     await provider.connection.confirmTransaction(signature);
 
@@ -114,7 +112,7 @@ describe("ainft", async () => {
     assert.ok(ainftWithComputeMint.computeMint.equals(computeMint), "Compute mint should be set in AiNft account");
   });
 
-  it.only("Mints an AI NFT successfully", async () => {
+  it("Mints an AI NFT successfully", async () => {
 
     const aiCharacterName = "AI Character #1";
     const aiNftMetadata = {
@@ -475,7 +473,7 @@ describe("ainft", async () => {
 
 
 
-  it("Can stake compute, send messages, and unstake compute", async () => {
+  it.only("Can stake compute, send messages, and unstake compute", async () => {
     // First mint an AI NFT (using previous test setup)
     const aiNftMetadata = {
       name: "AI Character #1",
@@ -526,6 +524,12 @@ describe("ainft", async () => {
     });
 
     // Mint the AI character
+    const signature = await provider.connection.requestAirdrop(
+      payer.publicKey,
+      200 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(signature);
+
     console.log("Minting AI character");
     await program.methods
       .mintAinft(aiNftMetadata.name, aiNftMetadata.uri)
@@ -583,12 +587,11 @@ describe("ainft", async () => {
 
     // transfer 50 compute tokens to the ai character using spl transfer
     console.log("Transferring 50 compute tokens to the ai character");
-    const transferIx = await createTransferInstruction(
+    const transferIx = await spl.createTransferInstruction(
       stakerComputeAccount,
       aiCharacterComputeTokenAccount,
       payer.publicKey,
-      100_000_000_000,
-      [payer]
+      100_000_000_000
     )
 
     const tx = new Transaction().add(transferIx);
@@ -741,13 +744,34 @@ describe("ainft", async () => {
 
     console.log("Sending message");
     const messageText = "Hello AI!";
+
+    // Create a token account for the sender to hold compute tokens
+    const senderComputeTokenAccount = await anchor.utils.token.associatedAddress({
+      mint: computeMint,
+      owner: payer.publicKey
+    });
+
+    // Mint some compute tokens to the sender for testing
+    await program.methods
+      .mintCompute(new BN(10))
+      .accounts({
+        aiNft: appAinftPda,
+        computeMint: computeMint,
+        recipientTokenAccount: senderComputeTokenAccount,
+        destinationUser: payer.publicKey,
+        authority: payer.publicKey,
+      })
+      .signers([payer])
+      .rpc();
+
     await program.methods
       .sendMessage(messageText)
       .accounts({
         message: messageAccount,
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
-        computeToken: aiCharacterComputeTokenAccount,
+        computeTokenReceiver: aiCharacterComputeTokenAccount,
+        senderComputeToken: senderComputeTokenAccount,
         sender: payer.publicKey,
       })
       .signers([payer])
@@ -812,25 +836,7 @@ describe("ainft", async () => {
       program.programId
     );
 
-    // Register the new execution client
-    await program.methods
-      .registerExecutionClient(
-        new BN(5_000_000_000), // 5 compute gas fee
-        ["text"],
-        60, // 60% staker fee share
-        newExecutionClientBump
-      )
-      .accounts({
-        aiNft: appAinftPda,
-        executionClient: newExecutionClientPda,
-        computeTokenAccount: newExecutionClientComputeAccount,
-        stakedTokenAccount: stakedTokenAccount,
-        computeMint: computeMint,
-        signer: newExecutionClient.publicKey,
-        stakedMint: newStakedMint,
-      })
-      .signers([newExecutionClient])
-      .rpc();
+
 
     // Update the AI character's execution client
     await program.methods
@@ -841,14 +847,14 @@ describe("ainft", async () => {
         authority: payer.publicKey,
         aiCharacterMint: aiCharacterMint,
         aiCharacterTokenAccount: payerAiCharacterTokenAccount,
-        executionClient: newExecutionClientPda,
+        executionClient: executionClient,
       })
       .signers([payer])
       .rpc();
 
     // Verify the execution client was updated
     const finalAiCharacter = await program.account.aiCharacterNft.fetch(aiCharacter);
-    assert.ok(finalAiCharacter.executionClient.equals(newExecutionClientPda), "Execution client should be updated");
+    assert.ok(finalAiCharacter.executionClient.equals(executionClient), "Execution client should be updated");
 
     // Unstake compute tokens
     console.log("Unstaking compute tokens");

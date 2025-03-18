@@ -1,7 +1,7 @@
 use std::mem::size_of;
 
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount};
+use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::{
     error::AiNftError,
@@ -32,12 +32,21 @@ pub struct SendMessage<'info> {
     #[account(mut)]
     pub ai_character: AccountLoader<'info, AiCharacterNFT>,
 
+    // The AI character's compute token account that will receive the payment
     #[account(
         mut,
-        constraint = compute_token.mint == ai_nft.compute_mint @ AiNftError::InvalidComputeMint,
-        constraint = compute_token.owner == ai_character.key() @ AiNftError::InvalidTokenOwner,
+        constraint = compute_token_receiver.mint == ai_nft.compute_mint @ AiNftError::InvalidComputeMint,
+        constraint = compute_token_receiver.owner == ai_character.key() @ AiNftError::InvalidTokenOwner,
     )]
-    pub compute_token: Account<'info, TokenAccount>,
+    pub compute_token_receiver: Account<'info, TokenAccount>,
+
+    // The sender's compute token account that will pay for the message
+    #[account(
+        mut,
+        constraint = sender_compute_token.mint == ai_nft.compute_mint @ AiNftError::InvalidComputeMint,
+        constraint = sender_compute_token.owner == sender.key() @ AiNftError::InvalidTokenOwner,
+    )]
+    pub sender_compute_token: Account<'info, TokenAccount>,
 
     #[account(mut)]
     pub sender: Signer<'info>,
@@ -51,10 +60,23 @@ pub fn send_message_handler(ctx: Context<SendMessage>, content: String) -> Resul
     let ai_nft = &mut ctx.accounts.ai_nft;
     let ai_character = &mut ctx.accounts.ai_character.load_mut().unwrap();
 
-    // Verify compute token balance
-    if ctx.accounts.compute_token.amount < 1 {
+    // Verify sender has enough compute tokens
+    if ctx.accounts.sender_compute_token.amount < 1 {
         return err!(AiNftError::InsufficientCompute);
     }
+
+    // Transfer compute token from sender to AI character
+    token::transfer(
+        CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.sender_compute_token.to_account_info(),
+                to: ctx.accounts.compute_token_receiver.to_account_info(),
+                authority: ctx.accounts.sender.to_account_info(),
+            },
+        ),
+        1, // Transfer 1 compute token per message
+    )?;
 
     // Create the message
     **message = MessageAiCharacter::new(

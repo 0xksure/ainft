@@ -1,21 +1,32 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useWallet, WalletContextState } from '@solana/wallet-adapter-react';
 import { useSearchParams } from 'next/navigation';
 import { PublicKey, Connection, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
-import { useAnchorProgram } from '../utils/anchor';
+import { 
+    useAnchorProgram, 
+    findAppAinftPDA, 
+    findAiCharacterMintPDA, 
+    findAiCharacterPDA, 
+    stringToByteArray,
+    fetchAllExecutionClients,
+    updateAiCharacterExecutionClient,
+    getAiCharacterComputeTokenBalance,
+    checkAiCharacterComputeAccount
+} from '../utils/anchor';
 import { useNetworkStore } from '../stores/networkStore';
 import PageLayout from '../components/PageLayout';
 import { motion } from 'framer-motion';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
-import { ExternalLink, Save, AlertCircle, Crown } from 'lucide-react';
+import { ExternalLink, Save, AlertCircle, Crown, Server } from 'lucide-react';
 import Link from 'next/link';
 import { fetchAiCharacterNft } from '../utils/metadata';
 import * as anchor from '@coral-xyz/anchor';
-import { findAppAinftPDA, findAiCharacterMintPDA, findAiCharacterPDA, stringToByteArray } from '../utils/anchor';
+import { useToast } from '../components/ui/toast';
+import CopyableAddress from '../components/CopyableAddress';
 
 interface AiCharacterConfig {
     name: string;
@@ -37,12 +48,33 @@ interface AiCharacterConfig {
     adjectives: string[];
 }
 
+// Execution client interface
+interface ExecutionClientData {
+    publicKey: PublicKey;
+    aiNft: PublicKey;
+    authority: PublicKey;
+    computeTokenAddress: PublicKey;
+    gas: number;
+    computeMint: PublicKey;
+    liquidStakingTokenMint: PublicKey;
+    stakePoolTokenAccount: PublicKey;
+    totalCompute: number;
+    totalStaked: number;
+    totalProcessed: number;
+    stakerFeeShare: number;
+    active: boolean;
+    supportedMessageTypes: string[];
+}
+
 interface AiCharacterNft {
     address: string;
     name: string;
     characterConfig: AiCharacterConfig;
     owner: PublicKey;
     imageUrl: string;
+    executionClient?: PublicKey;
+    hasComputeAccount?: boolean;
+    computeTokenBalance?: number;
 }
 
 export default function EditPage() {
@@ -52,16 +84,51 @@ export default function EditPage() {
     const { program, loading: programLoading } = useAnchorProgram();
     const { network, connection } = useNetworkStore();
     const [isClient, setIsClient] = useState(false);
-    const [nft, setNft] = useState<any>(null);
+    const [nft, setNft] = useState<AiCharacterNft | null>(null);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [editForm, setEditForm] = useState<AiCharacterConfig | null>(null);
     const [formKey, setFormKey] = useState(0);
+    const { addToast } = useToast();
+    
+    // Execution client state
+    const [executionClients, setExecutionClients] = useState<ExecutionClientData[]>([]);
+    const [selectedExecutionClient, setSelectedExecutionClient] = useState<string | undefined>(undefined);
+    const [loadingClients, setLoadingClients] = useState(false);
+    const [updatingExecutionClient, setUpdatingExecutionClient] = useState(false);
 
     // Set isClient to true when component mounts (client-side only)
     useEffect(() => {
         setIsClient(true);
     }, []);
+    
+    // Fetch execution clients
+    const fetchExecutionClients = useCallback(async () => {
+        if (!program || !connection || !wallet.publicKey) return;
+        
+        setLoadingClients(true);
+        try {
+            const clients = await fetchAllExecutionClients(program, connection);
+            setExecutionClients(clients);
+            
+            // If we have an AI NFT and it has an execution client, set it as selected
+            if (nft && nft.executionClient) {
+                setSelectedExecutionClient(nft.executionClient.toString());
+            }
+        } catch (error) {
+            console.error("Error fetching execution clients:", error);
+            addToast("Failed to fetch execution clients", "error");
+        } finally {
+            setLoadingClients(false);
+        }
+    }, [program, connection, wallet.publicKey, nft, addToast]);
+    
+    // Load execution clients
+    useEffect(() => {
+        if (!isClient || !program || !connection) return;
+
+        fetchExecutionClients();
+    }, [isClient, program, connection, fetchExecutionClients]);
 
     // Fetch NFT data
     useEffect(() => {
@@ -74,8 +141,31 @@ export default function EditPage() {
             try {
                 const nftData = await fetchAiCharacterNft(program, connection, nftAddress);
                 console.log("Fetched NFT data:", nftData);
-                setNft(nftData);
-
+                
+                // Check if the AI character has a compute account
+                const hasComputeAccount = await checkAiCharacterComputeAccount(
+                    connection,
+                    nftData.executionClient
+                );
+                
+                // Get compute token balance if the character has a compute account
+                let computeTokenBalance = 0;
+                if (hasComputeAccount) {
+                    computeTokenBalance = await getAiCharacterComputeTokenBalance(
+                        connection,
+                        nftData.executionClient
+                    );
+                }
+                
+                // Add compute account info to nftData
+                const updatedNftData = {
+                    ...nftData,
+                    hasComputeAccount,
+                    computeTokenBalance
+                };
+                
+                setNft(updatedNftData);
+                
                 // Initialize edit form with NFT data
                 const formData = {
                     name: nftData.name || '',
@@ -272,6 +362,22 @@ export default function EditPage() {
                 .instruction();
             instructions.push(updateAdjectivesIx);
 
+            // Update execution client
+            if (selectedExecutionClient) {
+                const updateExecutionClientIx = await program.methods
+                    .updateAiCharacterExecutionClient()
+                    .accounts({
+                        aiNft: appAinftPda,
+                        aiCharacter: aiCharacter,
+                        authority: publicKey,
+                        aiCharacterMint: aiCharacterMint,
+                        aiCharacterTokenAccount: authorityAiCharacterTokenAccount,
+                        executionClient: new PublicKey(selectedExecutionClient),
+                    })
+                    .instruction();
+                instructions.push(updateExecutionClientIx);
+            }
+
             // Get the latest blockhash
             const latestBlockhash = await connection.getLatestBlockhash('confirmed');
 
@@ -313,6 +419,30 @@ export default function EditPage() {
             setError(err instanceof Error ? err.message : 'Failed to update NFT data');
         } finally {
             setSaving(false);
+        }
+    };
+
+    // Handle updating the execution client
+    const handleUpdateExecutionClient = async (clientPublicKey: string) => {
+        if (!program || !connection || !wallet.publicKey || !nft) return;
+        
+        setUpdatingExecutionClient(true);
+        try {
+            setSelectedExecutionClient(clientPublicKey);
+            
+            // We'll update the execution client when saving the AI character
+            addToast("Execution client will be updated when you save", "success");
+        } catch (error) {
+            console.error("Error updating execution client:", error);
+            addToast("Failed to update execution client", "error");
+            // Reset to previous selection
+            if (nft.executionClient) {
+                setSelectedExecutionClient(nft.executionClient.toString());
+            } else {
+                setSelectedExecutionClient("");
+            }
+        } finally {
+            setUpdatingExecutionClient(false);
         }
     };
 
@@ -370,7 +500,7 @@ export default function EditPage() {
 
                             {/* Add owner address display below the title section */}
                             <div className="text-sm text-gray-400 mb-4">
-                                Owner: <span className="font-mono">{truncateAddress(nft.owner.toBase58())}</span>
+                                Owner: <CopyableAddress address={nft.owner.toBase58()} />
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -554,6 +684,78 @@ export default function EditPage() {
                                                 className="w-full min-h-[100px]"
                                             />
                                         </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-800 p-6 rounded-lg">
+                                    <h2 className="text-xl font-semibold mb-4">Execution Client</h2>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium mb-1">Select Execution Client</label>
+                                            <div className="flex flex-col space-y-2">
+                                                {loadingClients ? (
+                                                    <div className="animate-pulse h-10 bg-gray-700 rounded w-full"></div>
+                                                ) : (
+                                                    <>
+                                                        <div className="flex items-center">
+                                                            <select
+                                                                value={selectedExecutionClient || ""}
+                                                                onChange={(e) => {
+                                                                    if (e.target.value) {
+                                                                        handleUpdateExecutionClient(e.target.value);
+                                                                    }
+                                                                }}
+                                                                disabled={updatingExecutionClient}
+                                                                className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
+                                                            >
+                                                                <option value="">Select an execution client</option>
+                                                                {executionClients.map((client) => (
+                                                                    <option key={client.publicKey.toString()} value={client.publicKey.toString()}>
+                                                                        {truncateAddress(client.publicKey.toString())} - Gas: {client.gas}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        {selectedExecutionClient && (
+                                                            <div className="flex items-center text-sm text-green-400">
+                                                                <Server size={16} className="mr-2" />
+                                                                Current client: <CopyableAddress address={selectedExecutionClient} className="text-green-400" />
+                                                            </div>
+                                                        )}
+                                                        {updatingExecutionClient && (
+                                                            <div className="text-sm text-blue-400">
+                                                                Updating execution client...
+                                                            </div>
+                                                        )}
+                                                        <p className="text-xs text-gray-400 mt-1">
+                                                            The execution client handles the processing of messages sent to your AI character.
+                                                        </p>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Compute Token Balance */}
+                                        {nft && nft.hasComputeAccount && (
+                                            <div className="mt-4">
+                                                <label className="block text-sm font-medium mb-1">Compute Token Balance</label>
+                                                <div className={`flex items-center justify-between p-2 rounded ${
+                                                    nft.computeTokenBalance !== undefined && nft.computeTokenBalance < 5
+                                                        ? 'bg-red-900/70 text-red-200'
+                                                        : 'bg-gray-700/50 text-blue-400'
+                                                }`}>
+                                                    <span className="text-sm">Available tokens:</span>
+                                                    <span className="text-sm font-medium">
+                                                        {nft.computeTokenBalance !== undefined ? `${nft.computeTokenBalance} tokens` : 'Loading...'}
+                                                    </span>
+                                                </div>
+                                                {nft.computeTokenBalance !== undefined && nft.computeTokenBalance < 5 && (
+                                                    <p className="text-xs text-red-400 mt-1">
+                                                        Low token balance! Your AI character may not be able to process messages.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>

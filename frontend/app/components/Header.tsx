@@ -4,12 +4,15 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useNetworkStore } from '../stores/networkStore';
+import { useComputeBalanceStore } from '../stores/computeBalanceStore';
 import { Network } from '../utils/anchor';
 import { cn } from './ui/utils';
 import { Button } from './ui/button';
 import { Menu, X, ChevronDown, Check } from 'lucide-react';
+import { useToast } from './ui/toast';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -51,16 +54,49 @@ const networkConfig: Record<Network, { name: string; color: string }> = {
 
 export default function Header() {
     const pathname = usePathname();
-    const { network: selectedNetwork, setNetwork } = useNetworkStore();
+    const { network: selectedNetwork, setNetwork, connection } = useNetworkStore();
+    const { 
+        balance: computeBalance, 
+        isLoading: isLoadingBalance, 
+        fetchBalance: fetchComputeBalance,
+        lastUpdated: balanceLastUpdated
+    } = useComputeBalanceStore();
     const [isScrolled, setIsScrolled] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
     const [networkSwitching, setNetworkSwitching] = useState(false);
+    const { addToast } = useToast();
+    const wallet = useWallet();
 
     // Set mounted state on client-side
     useEffect(() => {
         setIsMounted(true);
     }, []);
+
+    // Format balance for display
+    const formatBalance = (balance: number): string => {
+        return balance.toLocaleString(undefined, { 
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2
+        });
+    };
+
+    // Fetch compute balance when wallet, connection, or network changes
+    useEffect(() => {
+        if (wallet.connected && wallet.publicKey && connection) {
+            console.log('Fetching compute balance due to wallet/connection/network change');
+            fetchComputeBalance(connection, wallet.publicKey);
+            
+            // Set up an interval to refresh the balance every 30 seconds
+            const intervalId = setInterval(() => {
+                if (wallet.connected && wallet.publicKey && connection) {
+                    fetchComputeBalance(connection, wallet.publicKey);
+                }
+            }, 30000);
+            
+            return () => clearInterval(intervalId);
+        }
+    }, [wallet.connected, wallet.publicKey, connection, selectedNetwork, fetchComputeBalance]);
 
     // Handle scroll event to change header appearance
     useEffect(() => {
@@ -77,10 +113,19 @@ export default function Header() {
         try {
             setNetworkSwitching(true);
             setNetwork(network);
+            // Show toast notification when network changes
+            addToast(`Network changed to ${networkConfig[network].name}`, 'info');
+            
+            // Refetch compute balance when network changes
+            if (wallet.connected && wallet.publicKey && connection) {
+                fetchComputeBalance(connection, wallet.publicKey);
+            }
+            
             // Simulate network switching delay
             await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
             console.error('Error switching network:', error);
+            addToast(`Error switching network: ${error instanceof Error ? error.message : String(error)}`, 'error');
         } finally {
             setNetworkSwitching(false);
         }
@@ -168,68 +213,87 @@ export default function Header() {
                             ))}
                         </nav>
 
-                        {/* Network Selector */}
-                        <div className="relative ml-4">
-                            <motion.div
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.5, delay: 0.5 }}
-                            >
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            className={cn(
-                                                "flex items-center gap-1 transition-all",
-                                                networkSwitching && "animate-pulse"
-                                            )}
-                                            disabled={networkSwitching}
-                                        >
-                                            <span className={cn(
-                                                "h-2 w-2 rounded-full mr-1",
-                                                networkConfig[selectedNetwork as Network].color || 'bg-gray-500'
-                                            )} />
-                                            <span>
-                                                {networkSwitching
-                                                    ? "Switching..."
-                                                    : (networkConfig[selectedNetwork as Network].name || selectedNetwork)
-                                                }
-                                            </span>
-                                            <ChevronDown size={16} />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent className="w-48">
-                                        {Object.keys(networkConfig).map((network) => (
-                                            <DropdownMenuItem
-                                                key={network}
-                                                onClick={() => handleNetworkChange(network as Network)}
-                                                className="flex items-center"
-                                            >
-                                                <span className={cn(
-                                                    "h-2 w-2 rounded-full mr-2",
-                                                    networkConfig[network as Network].color
-                                                )} />
-                                                {networkConfig[network as Network].name}
-                                                {selectedNetwork === network as Network && (
-                                                    <Check size={16} className="ml-auto" />
-                                                )}
-                                            </DropdownMenuItem>
-                                        ))}
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            </motion.div>
-                        </div>
+                        {/* Network Selector Dropdown */}
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button 
+                                    variant="outline" 
+                                    className={cn(
+                                        "ml-2 text-sm border-gray-700 bg-gray-900/50 hover:bg-gray-800",
+                                        networkSwitching && "opacity-50 cursor-not-allowed"
+                                    )}
+                                    disabled={networkSwitching}
+                                >
+                                    <div className={cn(
+                                        "w-2 h-2 rounded-full mr-2",
+                                        networkConfig[selectedNetwork].color
+                                    )} />
+                                    {networkConfig[selectedNetwork].name}
+                                    <ChevronDown className="ml-2 h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="bg-gray-900 border border-gray-700">
+                                {Object.entries(networkConfig).map(([key, { name, color }]) => (
+                                    <DropdownMenuItem
+                                        key={key}
+                                        className={cn(
+                                            "flex items-center cursor-pointer hover:bg-gray-800",
+                                            selectedNetwork === key && "bg-gray-800"
+                                        )}
+                                        onClick={() => handleNetworkChange(key as Network)}
+                                    >
+                                        <div className={cn("w-2 h-2 rounded-full mr-2", color)} />
+                                        {name}
+                                        {selectedNetwork === key && <Check className="ml-2 h-4 w-4" />}
+                                    </DropdownMenuItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
 
-                        {/* Wallet Button - Desktop */}
-                        <motion.div
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.5, delay: 0.6 }}
-                            className="ml-4"
-                        >
+                        {/* Compute Token Balance */}
+                        {wallet.connected && (
+                            <div
+                                className="flex items-center bg-gray-800/80 rounded-md px-3 py-1.5 ml-2 border-2 border-sky-700 cursor-pointer hover:bg-gray-700/80 transition-colors"
+                                onClick={() => {
+                                    if (computeBalance !== null) {
+                                        addToast(`Compute balance: ${formatBalance(computeBalance)} tokens on ${selectedNetwork}`, 'info');
+                                    } else {
+                                        // Manually trigger a balance refresh when clicked if balance is null
+                                        if (wallet.publicKey && connection) {
+                                            fetchComputeBalance(connection, wallet.publicKey);
+                                            addToast('Refreshing compute balance...', 'info');
+                                        }
+                                    }
+                                }}
+                            >
+                                <span className="text-sm text-gray-300 mr-2">Compute:</span>
+                                {isLoadingBalance ? (
+                                    <div className="h-4 w-16 bg-gray-700 animate-pulse rounded"></div>
+                                ) : computeBalance !== null ? (
+                                    <span className="text-sm font-medium text-sky-300">
+                                        {formatBalance(computeBalance)}
+                                    </span>
+                                ) : (
+                                    <span 
+                                        className="text-sm text-yellow-400 font-medium"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (wallet.publicKey && connection) {
+                                                addToast('Unable to display balance. Refreshing...', 'warning');
+                                                fetchComputeBalance(connection, wallet.publicKey);
+                                            }
+                                        }}
+                                    >
+                                        Not available
+                                    </span>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Wallet Button */}
+                        <div className="ml-2">
                             <WalletMultiButton />
-                        </motion.div>
+                        </div>
                     </div>
 
                     {/* Mobile menu button and wallet */}
