@@ -1,6 +1,6 @@
 import { PublicKey, Connection } from '@solana/web3.js';
 import { programs } from '@metaplex/js';
-import { Program } from '@project-serum/anchor';
+import { Program } from '@coral-xyz/anchor';
 import * as splToken from '@solana/spl-token';
 
 /**
@@ -57,7 +57,7 @@ export const fetchMetadata = async (connection: Connection, mint: PublicKey) => 
  * @param address The NFT account address
  * @returns The NFT data with metadata
  */
-export const fetchAiCharacterNft = async (program: Program, connection: Connection, address: string) => {
+export const fetchAiCharacterNft = async (program: any, connection: Connection, address: string) => {
     const nftPubkey = new PublicKey(address);
     const nftAccount = await program.account.aiCharacterNft.fetch(nftPubkey);
     const { metadata: { Metadata } } = programs;
@@ -98,24 +98,25 @@ export const fetchAiCharacterNft = async (program: Program, connection: Connecti
         name: bytesToString(Array.from(nftAccount.name)) || 'Unnamed AI',
         characterConfig: {
             name: bytesToString(Array.from(nftAccount.characterConfig.name)),
-            clients: bytesArrayToStrings(nftAccount.characterConfig.clients.map(c => Array.from(c))),
+            clients: bytesArrayToStrings(nftAccount.characterConfig.clients.map((c: any) => Array.from(c))),
             modelProvider: bytesToString(Array.from(nftAccount.characterConfig.modelProvider)),
             settings: {
                 voice: {
                     model: bytesToString(Array.from(nftAccount.characterConfig.settings.voice.model))
                 }
             },
-            bio: bytesArrayToStrings(nftAccount.characterConfig.bio.map(b => Array.from(b))),
-            lore: bytesArrayToStrings(nftAccount.characterConfig.lore.map(l => Array.from(l))),
-            knowledge: bytesArrayToStrings(nftAccount.characterConfig.knowledge.map(k => Array.from(k))),
-            topics: bytesArrayToStrings(nftAccount.characterConfig.topics.map(t => Array.from(t))),
+            bio: bytesArrayToStrings(nftAccount.characterConfig.bio.map((b: any) => Array.from(b))),
+            lore: bytesArrayToStrings(nftAccount.characterConfig.lore.map((l: any) => Array.from(l))),
+            knowledge: bytesArrayToStrings(nftAccount.characterConfig.knowledge.map((k: any) => Array.from(k))),
+            topics: bytesArrayToStrings(nftAccount.characterConfig.topics.map((t: any) => Array.from(t))),
             style: {
                 tone: bytesToString(Array.from(nftAccount.characterConfig.style.all[0])),
                 writing: bytesToString(Array.from(nftAccount.characterConfig.style.all[1]))
             },
-            adjectives: bytesArrayToStrings(nftAccount.characterConfig.adjectives.map(a => Array.from(a)))
+            adjectives: bytesArrayToStrings(nftAccount.characterConfig.adjectives.map((a: any) => Array.from(a)))
         },
         owner: owner,
-        imageUrl: tokenMetadata.data.data.uri
+        imageUrl: tokenMetadata.data.data.uri,
+        executionClient: nftAccount.executionClient || undefined
     };
 }; 

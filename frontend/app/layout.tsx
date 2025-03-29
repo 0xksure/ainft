@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import WalletContextProvider from "./contexts/WalletContextProvider";
+import { ToastProvider } from "./components/ui/toast";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -24,9 +25,11 @@ export default function RootLayout({
             </head>
             <body className={`${inter.className} min-h-screen bg-black text-white antialiased`} suppressHydrationWarning>
                 <WalletContextProvider>
-                    {children}
+                    <ToastProvider>
+                        {children}
+                    </ToastProvider>
                 </WalletContextProvider>
             </body>
         </html>
     );
-} 
+}

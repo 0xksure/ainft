@@ -5,6 +5,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { useNetworkStore } from '../stores/networkStore';
 import { useAnchorProgram, createAiNft, CharacterConfig } from '../utils/anchor';
 import PageLayout from '../components/PageLayout';
+import CopyableAddress from '../components/CopyableAddress';
 import { motion } from 'framer-motion';
 import { cn } from '../components/ui/utils';
 
@@ -447,7 +448,7 @@ export default function MintPage() {
                                 </div>
                                 <div className="space-y-2">
                                     <p className="font-semibold">Network: {network}</p>
-                                    <p className="font-semibold">Wallet: {wallet.publicKey.toString()}</p>
+                                    <p className="font-semibold">Wallet: <CopyableAddress address={wallet.publicKey} /></p>
                                     <p className="text-sm text-gray-400">
                                         Creating an AI NFT will cost approximately 0.01 SOL in transaction fees.
                                     </p>

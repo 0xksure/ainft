@@ -3,16 +3,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
-import { useAnchorProgram, sendMessage, getMessagesForAiNft } from '../utils/anchor';
+import { useAnchorProgram, sendMessage, getMessagesForAiNft, getAiCharacterComputeTokenBalance, transferComputeTokensToAiCharacter } from '../utils/anchor';
 import { useNetworkStore } from '../stores/networkStore';
 import PageLayout from '../components/PageLayout';
 import { motion } from 'framer-motion';
 import { cn } from '../components/ui/utils';
-import { Send, Share2 } from 'lucide-react';
+import { Send, Share2, Coins } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { programs } from "@metaplex/js";
 import { generatePixelatedImage } from '../utils/pixelate';
+import { decodeByteArray, decodeByteArrays } from '../utils/byteDecoder';
+import { useToast } from '../components/ui/toast';
 
 // Message type definition
 interface Message {
@@ -22,6 +24,8 @@ interface Message {
     timestamp: Date;
     status: 'sending' | 'sent' | 'error';
     error?: string;
+    response?: string;
+    answered?: boolean;
 }
 
 // AI NFT interface
@@ -31,6 +35,7 @@ interface AiNft {
     description: string;
     imageUrl: string;
     dateCreated: Date;
+    computeTokenBalance?: number;
 }
 
 export default function ChatPage() {
@@ -40,6 +45,7 @@ export default function ChatPage() {
     const [isClient, setIsClient] = useState(false);
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { addToast } = useToast();
 
     // AI NFT state
     const [aiNftAddress, setAiNftAddress] = useState<string>('');
@@ -47,6 +53,9 @@ export default function ChatPage() {
     const [allAiNfts, setAllAiNfts] = useState<AiNft[]>([]);
     const [loadingNfts, setLoadingNfts] = useState<boolean>(true);
     const [nftError, setNftError] = useState<string | null>(null);
+    const [loadingBalances, setLoadingBalances] = useState<boolean>(false);
+    const [donationAmount, setDonationAmount] = useState<number>(1);
+    const [donating, setDonating] = useState<boolean>(false);
 
     // Chat state
     const [messages, setMessages] = useState<Message[]>([]);
@@ -61,7 +70,7 @@ export default function ChatPage() {
         setIsClient(true);
 
         // Check if there's an NFT address in the URL
-        const addressParam = searchParams.get('address');
+        const addressParam = searchParams?.get('address');
         if (addressParam) {
             setAiNftAddress(addressParam);
         }
@@ -69,7 +78,7 @@ export default function ChatPage() {
 
     // Load all AI NFTs
     useEffect(() => {
-        if (!isClient || !program) return;
+        if (!isClient || !program || !connection) return;
 
         const fetchAllAiNfts = async () => {
             try {
@@ -82,26 +91,64 @@ export default function ChatPage() {
 
                 // Transform the data to match our AiNft interface
                 const formattedNfts: AiNft[] = await Promise.all(
-                    allNfts.map(async (item) => {
+                    allNfts.map(async (item: any) => {
                         try {
                             const metadataPDA = await Metadata.getPDA(item.account.characterNftMint);
                             const tokenMetadata = await Metadata.load(connection, metadataPDA);
 
+                            // Decode the name from byte array
+                            const decodedName = item.account.characterConfig?.name
+                                ? decodeByteArray(item.account.characterConfig.name)
+                                : '';
+
+                            // Use the decoded name or fallback to a default
+                            const name = decodedName || 'Unnamed AI';
+
+                            // Get description from bio fields if available
+                            const bioTexts = item.account.characterConfig?.bio
+                                ? decodeByteArrays(item.account.characterConfig.bio)
+                                : [];
+                            const description = bioTexts.length > 0
+                                ? bioTexts.join(' ')
+                                : 'No description available';
+
+                            // Use current timestamp if createdAt is not available
+                            const createdTimestamp = Date.now();
+
+                            // Get compute token balance
+                            const computeTokenBalance = await getAiCharacterComputeTokenBalance(
+                                connection,
+                                new PublicKey(item.account.characterNftMint)
+                            );
+
                             return {
                                 address: item.publicKey.toString(),
-                                name: item.account.name || 'Unnamed AI',
-                                description: item.account.characterConfig?.description || 'No description available',
+                                name: name,
+                                description: description,
                                 imageUrl: tokenMetadata.data.data.uri || '/placeholder-image.png',
-                                dateCreated: new Date(item.account.createdAt?.toNumber() || Date.now()),
+                                dateCreated: new Date(createdTimestamp),
+                                computeTokenBalance: computeTokenBalance
                             };
                         } catch (err) {
                             console.error('Error loading metadata for NFT:', err);
+
+                            // Even if metadata loading fails, try to decode the name
+                            let name = 'Unnamed AI';
+                            try {
+                                if (item.account.characterConfig && item.account.characterConfig.name) {
+                                    name = decodeByteArray(item.account.characterConfig.name) || name;
+                                }
+                            } catch (decodeErr) {
+                                console.error('Error decoding name:', decodeErr);
+                            }
+
                             return {
                                 address: item.publicKey.toString(),
-                                name: item.account.name || 'Unnamed AI',
+                                name: name,
                                 description: 'Metadata unavailable',
                                 imageUrl: '/placeholder-image.png',
-                                dateCreated: new Date(item.account.createdAt?.toNumber() || Date.now()),
+                                dateCreated: new Date(Date.now()),
+                                computeTokenBalance: 0
                             };
                         }
                     })
@@ -160,41 +207,31 @@ export default function ChatPage() {
                 sender: 'ai',
                 timestamp: new Date(),
                 status: 'error',
-                error: 'Wallet not connected or program not loaded',
+                error: 'Wallet not connected or program not loaded'
             });
             return;
         }
-        if (!connection) {
-            addMessage({
-                id: Date.now().toString(),
-                content: 'Connection not loaded',
-                sender: 'ai',
-                timestamp: new Date(),
-                status: 'error',
-                error: 'Connection not loaded',
-            });
-            return;
-        }
+
         if (!isValidAddress) {
             addMessage({
                 id: Date.now().toString(),
-                content: 'Invalid AI NFT address',
+                content: 'Please select a valid AI NFT first',
                 sender: 'ai',
                 timestamp: new Date(),
                 status: 'error',
-                error: 'Invalid AI NFT address',
+                error: 'No AI NFT selected'
             });
             return;
         }
 
-        if (newMessage.trim() === '') {
+        if (!newMessage.trim()) {
             return;
         }
 
+        const messageContent = newMessage.trim();
         const messageId = Date.now().toString();
-        const messageContent = newMessage;
 
-        // Add user message
+        // Add user message to chat
         addMessage({
             id: messageId,
             content: messageContent,
@@ -247,12 +284,14 @@ export default function ChatPage() {
             );
 
             // Process and update the messages state
-            const formattedMessages: Message[] = fetchedMessages.map(msg => ({
+            const formattedMessages: Message[] = fetchedMessages.map((msg: any) => ({
                 id: msg.publicKey.toString(),
                 content: msg.account.content || '',
                 sender: msg.account.sender.equals(wallet.publicKey) ? 'user' : 'ai',
                 timestamp: new Date(msg.account.timestamp?.toNumber() || Date.now()),
                 status: 'sent',
+                response: msg.account.response || '',
+                answered: msg.account.answered || false
             }));
 
             // Update the messages state
@@ -270,6 +309,56 @@ export default function ChatPage() {
         }
     }, [aiNftAddress, program, isValidAddress]);
 
+    // Set up Anchor listeners for message updates
+    useEffect(() => {
+        if (!program || !aiNftAddress || !isValidAddress) return;
+        
+        // Create a listener for the ResponseWritten event
+        const listener = program.addEventListener('responseWritten', (event: any) => {
+            console.log('Response written event:', event);
+            // Check if this event is for our AI NFT
+            if (event.aiNft.toString() === aiNftAddress) {
+                fetchMessages(); // Refresh messages when an event occurs
+            }
+        });
+        
+        // Set up a listener for account changes to detect responses
+        const messageListener = program.account.messageAiCharacter.subscribe(
+            // Use the program ID as a filter instead of null
+            program.programId,
+            'confirmed'
+        );
+        
+        messageListener.on('change', (account: any, context: any) => {
+            console.log('Message account changed:', account);
+            
+            // Check if this message belongs to our AI NFT
+            if (account.aiNft.toString() === aiNftAddress) {
+                // Update the messages state with the new response
+                setMessages(prevMessages => 
+                    prevMessages.map(msg => {
+                        if (msg.id === context.accountId.toString()) {
+                            return {
+                                ...msg,
+                                response: account.response || '',
+                                answered: account.answered || false,
+                                status: 'sent'
+                            };
+                        }
+                        return msg;
+                    })
+                );
+            }
+        });
+
+        // Return cleanup function
+        return () => {
+            // Remove event listeners when component unmounts
+            program.removeEventListener(listener);
+            messageListener.removeAllListeners();
+        };
+    }, [program, aiNftAddress, isValidAddress, fetchMessages]);
+
     // Add a message to the chat
     const addMessage = (message: Message) => {
         setMessages(prev => [...prev, message]);
@@ -284,6 +373,53 @@ export default function ChatPage() {
                     : msg
             )
         );
+    };
+
+    // Handle donation to AI character
+    const handleDonation = async () => {
+        if (!wallet.publicKey || !program || !connection || !isValidAddress) {
+            addToast("Wallet not connected or AI character not selected", "error");
+            return;
+        }
+
+        try {
+            setDonating(true);
+            const aiCharacterMint = allAiNfts.find(nft => nft.address === aiNftAddress)?.address;
+
+            if (!aiCharacterMint) {
+                throw new Error("AI character not found");
+            }
+
+            const txid = await transferComputeTokensToAiCharacter(
+                connection,
+                wallet,
+                new PublicKey(aiCharacterMint),
+                donationAmount
+            );
+
+            addToast(`Successfully donated ${donationAmount} compute tokens!`, "success");
+
+            // Refresh the compute token balance
+            const updatedNfts = await Promise.all(
+                allAiNfts.map(async (nft) => {
+                    if (nft.address === aiNftAddress) {
+                        const newBalance = await getAiCharacterComputeTokenBalance(
+                            connection,
+                            new PublicKey(nft.address)
+                        );
+                        return { ...nft, computeTokenBalance: newBalance };
+                    }
+                    return nft;
+                })
+            );
+
+            setAllAiNfts(updatedNfts);
+        } catch (error) {
+            console.error("Error donating compute tokens:", error);
+            addToast(`Failed to donate: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
+        } finally {
+            setDonating(false);
+        }
     };
 
     // Add this function inside your component
@@ -395,6 +531,17 @@ export default function ChatPage() {
                                                     <div className="flex-1 overflow-hidden">
                                                         <h3 className="font-medium truncate">{nft.name}</h3>
                                                         <p className="text-xs text-gray-400 truncate">{nft.description}</p>
+                                                        <div className={cn(
+                                                            "text-xs mt-1",
+                                                            (nft.computeTokenBalance !== undefined && nft.computeTokenBalance < 5)
+                                                                ? "text-red-400"
+                                                                : "text-green-400"
+                                                        )}>
+                                                            <Coins size={12} className="inline mr-1" />
+                                                            {nft.computeTokenBalance !== undefined
+                                                                ? `${nft.computeTokenBalance.toFixed(2)} tokens`
+                                                                : "Loading..."}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ))}
@@ -431,15 +578,47 @@ export default function ChatPage() {
                                                         {allAiNfts.find(nft => nft.address === aiNftAddress)?.name || 'AI NFT'}
                                                     </h3>
                                                     <p className="text-xs text-gray-400">{aiNftAddress.slice(0, 8)}...{aiNftAddress.slice(-8)}</p>
+                                                    <div className={cn(
+                                                        "text-xs mt-1",
+                                                        (allAiNfts.find(nft => nft.address === aiNftAddress)?.computeTokenBalance !== undefined &&
+                                                            allAiNfts.find(nft => nft.address === aiNftAddress)?.computeTokenBalance! < 5)
+                                                            ? "text-red-400"
+                                                            : "text-green-400"
+                                                    )}>
+                                                        <Coins size={12} className="inline mr-1" />
+                                                        {allAiNfts.find(nft => nft.address === aiNftAddress)?.computeTokenBalance !== undefined
+                                                            ? `${allAiNfts.find(nft => nft.address === aiNftAddress)?.computeTokenBalance!.toFixed(2)} tokens`
+                                                            : "Loading..."}
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <button
-                                                onClick={copyShareLink}
-                                                className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm flex items-center"
-                                            >
-                                                <Share2 size={14} className="mr-1" />
-                                                Share
-                                            </button>
+                                            <div className="flex items-center space-x-2">
+                                                <div className="flex items-center space-x-2">
+                                                    <input
+                                                        type="number"
+                                                        min="0.1"
+                                                        step="0.1"
+                                                        value={donationAmount}
+                                                        onChange={(e) => setDonationAmount(parseFloat(e.target.value))}
+                                                        className="w-16 px-2 py-1 bg-gray-700 rounded text-sm"
+                                                    />
+                                                    <button
+                                                        onClick={handleDonation}
+                                                        disabled={donating || !wallet.publicKey}
+                                                        className="px-3 py-1 bg-green-600 hover:bg-green-700 rounded text-sm flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        <Coins size={14} className="mr-1" />
+                                                        {donating ? 'Donating...' : 'Donate'}
+                                                    </button>
+                                                </div>
+                                                <button
+                                                    onClick={copyShareLink}
+                                                    className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm flex items-center"
+                                                >
+                                                    <Share2 size={14} className="mr-1" />
+                                                    Share
+                                                </button>
+                                            </div>
                                         </div>
 
                                         {/* Chat Messages */}
@@ -453,29 +632,46 @@ export default function ChatPage() {
                                                     </div>
                                                 ) : (
                                                     messages.map((message) => (
-                                                        <div
-                                                            key={message.id}
-                                                            className={cn(
-                                                                "max-w-[80%] rounded-lg p-3",
-                                                                message.sender === 'user'
-                                                                    ? "bg-blue-600 ml-auto"
-                                                                    : "bg-gray-700"
-                                                            )}
-                                                        >
-                                                            <p>{message.content}</p>
-                                                            <div className="flex items-center justify-between mt-2">
-                                                                <span className="text-xs text-gray-400">
-                                                                    {message.timestamp.toLocaleTimeString()}
-                                                                </span>
-                                                                {message.status === 'sending' && (
-                                                                    <span className="text-xs text-gray-400">Sending...</span>
+                                                        <div key={message.id}>
+                                                            {/* User message */}
+                                                            <div
+                                                                className={cn(
+                                                                    "max-w-[80%] rounded-lg p-3 mb-2",
+                                                                    "bg-blue-600 ml-auto"
                                                                 )}
-                                                                {message.status === 'error' && (
-                                                                    <span className="text-xs text-red-400">
-                                                                        Error: {message.error}
+                                                            >
+                                                                <p>{message.content}</p>
+                                                                <div className="flex items-center justify-between mt-2">
+                                                                    <span className="text-xs text-gray-400">
+                                                                        {message.timestamp.toLocaleTimeString()}
                                                                     </span>
-                                                                )}
+                                                                    {message.status === 'sending' && (
+                                                                        <span className="text-xs text-gray-400">Sending...</span>
+                                                                    )}
+                                                                    {message.status === 'error' && (
+                                                                        <span className="text-xs text-red-400">
+                                                                            Error: {message.error}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
                                                             </div>
+                                                            
+                                                            {/* AI response - only show if there's a response */}
+                                                            {message.response && (
+                                                                <div
+                                                                    className={cn(
+                                                                        "max-w-[80%] rounded-lg p-3 mt-2",
+                                                                        "bg-green-700 mr-auto"
+                                                                    )}
+                                                                >
+                                                                    <p>{message.response}</p>
+                                                                    <div className="flex items-center justify-between mt-2">
+                                                                        <span className="text-xs text-gray-400">
+                                                                            {new Date().toLocaleTimeString()}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     ))
                                                 )}
@@ -548,4 +744,4 @@ export default function ChatPage() {
             </div>
         </PageLayout>
     );
-} 
+}

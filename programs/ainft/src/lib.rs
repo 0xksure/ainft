@@ -63,7 +63,7 @@ pub mod ainft {
     /// Sends a message to an AI NFT
     ///
     /// Allows users to interact with an AI NFT by sending messages.
-    /// Requires compute tokens for processing.
+    /// Requires the user to pay with compute tokens for each message.
     ///
     /// # Arguments
     /// * `content` - The message content
