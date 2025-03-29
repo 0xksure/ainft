@@ -21,16 +21,11 @@ const defaultNetwork: Network = 'devnet';
 // Create the network store
 export const useNetworkStore = create<NetworkState>()(
     persist(
-        (set) => {
-            // Get the default cluster URL
-            const defaultClusterUrl = isBrowser ? getClusterUrl(defaultNetwork) : 'https://api.devnet.solana.com';
-
+        (set, get) => {
             return {
                 network: defaultNetwork,
-                // Initialize connection only in browser environment with a valid URL
-                connection: isBrowser
-                    ? new Connection(defaultClusterUrl, 'confirmed')
-                    : null,
+                // Initialize connection as null initially
+                connection: null,
                 setNetwork: (network: Network) => {
                     // Get the cluster URL for the selected network
                     const clusterUrl = isBrowser ? getClusterUrl(network) : 'https://api.devnet.solana.com';
@@ -49,6 +44,13 @@ export const useNetworkStore = create<NetworkState>()(
             storage: createJSONStorage(() => localStorage),
             // Only persist the network selection, not the connection object
             partialize: (state) => ({ network: state.network }),
+            // Initialize the connection with the persisted network on hydration
+            onRehydrateStorage: () => (state) => {
+                if (state && isBrowser) {
+                    const clusterUrl = getClusterUrl(state.network);
+                    state.connection = new Connection(clusterUrl, 'confirmed');
+                }
+            },
         }
     )
 );
