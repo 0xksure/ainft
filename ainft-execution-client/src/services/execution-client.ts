@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import IDL from '../../../target/idl/ainft.json'
 import { Ainft } from '../../../target/types/ainft'
 import * as anchor from '@coral-xyz/anchor';
+import { LLMService, llmService } from './llm-service';
 
 // Load environment variables
 dotenv.config();
@@ -478,16 +479,18 @@ export class ExecutionClientService {
    */
   private async generateResponse(prompt: string): Promise<string> {
     try {
-      // In a real implementation, this would call an LLM API
-      // For demonstration purposes, we'll return a mock response
-
       if (isDevEnvironment) {
         console.log('Generating response for prompt:', prompt);
       }
 
-      return `Here is a response to your query: "${prompt.substring(0, 50)}..."\n\n` +
-        "I've analyzed the information and here's what I found...\n\n" +
-        "```rust\nuse anchor_lang::prelude::*;\n\n#[program]\nmod example {\n    use super::*;\n    \n    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {\n        Ok(())\n    }\n}\n\n#[derive(Accounts)]\npub struct Initialize {}\n```";
+      // Use the LLM service to generate a response
+      const response = await llmService.generateCompletion(prompt);
+      
+      if (isDevEnvironment) {
+        console.log('Generated response:', response.substring(0, 100) + '...');
+      }
+
+      return response;
     } catch (error) {
       console.error('Failed to generate response:', error);
       return "I'm sorry, I couldn't generate a response at this time.";
