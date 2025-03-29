@@ -24,6 +24,8 @@ interface Message {
     timestamp: Date;
     status: 'sending' | 'sent' | 'error';
     error?: string;
+    response?: string;
+    answered?: boolean;
 }
 
 // AI NFT interface
@@ -288,6 +290,8 @@ export default function ChatPage() {
                 sender: msg.account.sender.equals(wallet.publicKey) ? 'user' : 'ai',
                 timestamp: new Date(msg.account.timestamp?.toNumber() || Date.now()),
                 status: 'sent',
+                response: msg.account.response || '',
+                answered: msg.account.answered || false
             }));
 
             // Update the messages state
@@ -304,6 +308,56 @@ export default function ChatPage() {
             fetchMessages();
         }
     }, [aiNftAddress, program, isValidAddress]);
+
+    // Set up Anchor listeners for message updates
+    useEffect(() => {
+        if (!program || !aiNftAddress || !isValidAddress) return;
+        
+        // Create a listener for the ResponseWritten event
+        const listener = program.addEventListener('responseWritten', (event: any) => {
+            console.log('Response written event:', event);
+            // Check if this event is for our AI NFT
+            if (event.aiNft.toString() === aiNftAddress) {
+                fetchMessages(); // Refresh messages when an event occurs
+            }
+        });
+        
+        // Set up a listener for account changes to detect responses
+        const messageListener = program.account.messageAiCharacter.subscribe(
+            // Use the program ID as a filter instead of null
+            program.programId,
+            'confirmed'
+        );
+        
+        messageListener.on('change', (account: any, context: any) => {
+            console.log('Message account changed:', account);
+            
+            // Check if this message belongs to our AI NFT
+            if (account.aiNft.toString() === aiNftAddress) {
+                // Update the messages state with the new response
+                setMessages(prevMessages => 
+                    prevMessages.map(msg => {
+                        if (msg.id === context.accountId.toString()) {
+                            return {
+                                ...msg,
+                                response: account.response || '',
+                                answered: account.answered || false,
+                                status: 'sent'
+                            };
+                        }
+                        return msg;
+                    })
+                );
+            }
+        });
+
+        // Return cleanup function
+        return () => {
+            // Remove event listeners when component unmounts
+            program.removeEventListener(listener);
+            messageListener.removeAllListeners();
+        };
+    }, [program, aiNftAddress, isValidAddress, fetchMessages]);
 
     // Add a message to the chat
     const addMessage = (message: Message) => {
@@ -578,29 +632,46 @@ export default function ChatPage() {
                                                     </div>
                                                 ) : (
                                                     messages.map((message) => (
-                                                        <div
-                                                            key={message.id}
-                                                            className={cn(
-                                                                "max-w-[80%] rounded-lg p-3",
-                                                                message.sender === 'user'
-                                                                    ? "bg-blue-600 ml-auto"
-                                                                    : "bg-gray-700"
-                                                            )}
-                                                        >
-                                                            <p>{message.content}</p>
-                                                            <div className="flex items-center justify-between mt-2">
-                                                                <span className="text-xs text-gray-400">
-                                                                    {message.timestamp.toLocaleTimeString()}
-                                                                </span>
-                                                                {message.status === 'sending' && (
-                                                                    <span className="text-xs text-gray-400">Sending...</span>
+                                                        <div key={message.id}>
+                                                            {/* User message */}
+                                                            <div
+                                                                className={cn(
+                                                                    "max-w-[80%] rounded-lg p-3 mb-2",
+                                                                    "bg-blue-600 ml-auto"
                                                                 )}
-                                                                {message.status === 'error' && (
-                                                                    <span className="text-xs text-red-400">
-                                                                        Error: {message.error}
+                                                            >
+                                                                <p>{message.content}</p>
+                                                                <div className="flex items-center justify-between mt-2">
+                                                                    <span className="text-xs text-gray-400">
+                                                                        {message.timestamp.toLocaleTimeString()}
                                                                     </span>
-                                                                )}
+                                                                    {message.status === 'sending' && (
+                                                                        <span className="text-xs text-gray-400">Sending...</span>
+                                                                    )}
+                                                                    {message.status === 'error' && (
+                                                                        <span className="text-xs text-red-400">
+                                                                            Error: {message.error}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
                                                             </div>
+                                                            
+                                                            {/* AI response - only show if there's a response */}
+                                                            {message.response && (
+                                                                <div
+                                                                    className={cn(
+                                                                        "max-w-[80%] rounded-lg p-3 mt-2",
+                                                                        "bg-green-700 mr-auto"
+                                                                    )}
+                                                                >
+                                                                    <p>{message.response}</p>
+                                                                    <div className="flex items-center justify-between mt-2">
+                                                                        <span className="text-xs text-gray-400">
+                                                                            {new Date().toLocaleTimeString()}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     ))
                                                 )}

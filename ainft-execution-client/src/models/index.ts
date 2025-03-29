@@ -27,6 +27,12 @@ export class Message {
   
   @prop({ default: Date.now })
   public createdAt!: Date;
+  
+  @prop()
+  public publicKey?: string;
+  
+  @prop()
+  public id?: string;
 }
 
 /**

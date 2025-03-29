@@ -147,9 +147,7 @@ pub fn write_response_handler(ctx: Context<WriteResponse>, response: ResponseWit
     // Update state
     ctx.accounts.execution_client.add_fees(fee_split.0);
     ctx.accounts.execution_client.total_processed += 1;
-    ctx.accounts.message.response = Some(response.content);
+    ctx.accounts.message.answer(&response.content);
 
     Ok(())
 }
-
-

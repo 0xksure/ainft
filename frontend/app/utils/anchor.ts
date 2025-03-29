@@ -1,7 +1,7 @@
 'use client';
 import * as anchor from '@coral-xyz/anchor';
 import { useEffect, useState } from 'react';
-import { Connection, PublicKey, Transaction, TransactionInstruction, sendAndConfirmTransaction, VersionedTransaction, Keypair } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, TransactionInstruction, sendAndConfirmTransaction, VersionedTransaction, Keypair, TransactionMessage } from '@solana/web3.js';
 import { Program, AnchorProvider, Wallet, web3, BN, utils } from '@coral-xyz/anchor';
 import { useAnchorWallet, WalletContextState } from '@solana/wallet-adapter-react';
 import { useNetworkStore } from '../stores/networkStore';
@@ -937,12 +937,16 @@ export const createAiCharacterComputeAccount = async (
     program: Program<Ainft>,
     wallet: WalletContextState,
     connection: Connection,
-    aiCharacterMint: PublicKey
+    aiCharacter: PublicKey,
+    name: string
 ) => {
     try {
         if (!wallet.publicKey) {
             throw new Error("Wallet not connected");
         }
+
+
+
 
         // Find necessary PDAs
         const [appAinftPda] = findAppAinftPDA();
@@ -951,21 +955,25 @@ export const createAiCharacterComputeAccount = async (
         // Get the AI character's compute token account
         const aiCharacterComputeTokenAccount = anchor.utils.token.associatedAddress({
             mint: computeMint,
-            owner: aiCharacterMint
+            owner: aiCharacter
         });
+
+        const [aiCharacterMint] = findAiCharacterMintPDA(appAinftPda, name);
+
+
+        const [aiCharacterMetadata] = findMetadataPDA(aiCharacterMint);
 
         // Create the instruction
         const instruction = await program.methods
             .createAiCharacterComputeAccount()
             .accounts({
-                aiNft: appAinftPda,
-                aiCharacter: aiCharacterMint,
-                aiCharacterMint: aiCharacterMint,
+                aiCharacter: aiCharacter,
                 computeMint: computeMint,
                 aiCharacterComputeTokenAccount: aiCharacterComputeTokenAccount,
                 payer: wallet.publicKey,
             })
             .instruction();
+
 
         // Get latest blockhash
         const latestBlockhash = await connection.getLatestBlockhash('confirmed');

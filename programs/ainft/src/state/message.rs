@@ -4,13 +4,34 @@ use super::{AiCharacterNFT, AiNft};
 
 #[account]
 pub struct MessageAiCharacter {
-    pub ai_nft: Pubkey,
-    pub ai_character: Pubkey,
-    pub sender: Pubkey,
-    pub content: String,
-    pub response: Option<String>,
-    pub answered: bool,
-    pub bump: u8,
+    pub ai_nft: Pubkey,           // 32 bytes
+    pub ai_character: Pubkey,     // 32 bytes
+    pub sender: Pubkey,           // 32 bytes
+    pub content: String,          // MAX_CONTENT_LENGTH!
+    pub response: Option<String>, // MAX_RESPONSE_LENGTH
+    pub answered: bool,           // 1 byte
+    pub bump: u8,                 // 1 byte
+}
+
+pub mod message_constants {
+    pub const DISCRIMINATOR_SIZE: usize = 8;
+    pub const PUBKEY_SIZE: usize = 32;
+    pub const BOOL_SIZE: usize = 1;
+    pub const U8_SIZE: usize = 1;
+    pub const STRING_PREFIX_SIZE: usize = 4; // Size of the length prefix for strings
+    pub const OPTION_PREFIX_SIZE: usize = 1; // Size of the discriminator for Option
+
+    pub const MAX_CONTENT_LENGTH: usize = 1000; // Adjust based on your needs
+    pub const MAX_RESPONSE_LENGTH: usize = 7000; // Adjust based on your needs
+
+    pub const MESSAGE_AI_CHARACTER_SIZE: usize = DISCRIMINATOR_SIZE +
+        PUBKEY_SIZE +                // ai_nft
+        PUBKEY_SIZE +                // ai_character
+        PUBKEY_SIZE +                // sender
+        STRING_PREFIX_SIZE + MAX_CONTENT_LENGTH + // content
+        OPTION_PREFIX_SIZE + STRING_PREFIX_SIZE + MAX_RESPONSE_LENGTH + // response
+        BOOL_SIZE +                  // answered
+        U8_SIZE; // bump
 }
 
 impl MessageAiCharacter {
@@ -33,7 +54,13 @@ impl MessageAiCharacter {
     }
 
     pub fn answer(&mut self, response: &str) {
-        self.response = Some(response.to_string());
+        let response_str = if response.len() > message_constants::MAX_RESPONSE_LENGTH {
+            &response[0..message_constants::MAX_RESPONSE_LENGTH]
+        } else {
+            response
+        };
+
+        self.response = Some(response_str.to_string());
         self.answered = true;
     }
 }

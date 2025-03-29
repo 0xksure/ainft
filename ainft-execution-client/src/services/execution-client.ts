@@ -3,7 +3,7 @@ import { AnchorProvider, Program, Wallet } from '@coral-xyz/anchor';
 import fs from 'fs';
 import { PluginRegistry } from '../plugins/registry';
 import { DatabaseService } from './database';
-import { MessageModel, ExecutionClientStateModel } from '../models';
+import { MessageModel, ExecutionClientStateModel, Message } from '../models';
 import dotenv from 'dotenv';
 import IDL from '../../../target/idl/ainft.json'
 import { Ainft } from '../../../target/types/ainft'
@@ -209,14 +209,29 @@ export class ExecutionClientService {
   }
 
   /**
+   * Convert a blockchain message to the Message interface format
+   * @param blockchainMessage Message from the blockchain
+   * @returns Message in the correct format
+   */
+  private convertBlockchainMessageToModel(blockchainMessage: any): Message {
+    return {
+      aiNft: blockchainMessage.account.aiNft.toString(),
+      aiCharacter: blockchainMessage.account.aiCharacter.toString(),
+      sender: blockchainMessage.account.sender.toString(),
+      content: blockchainMessage.account.content,
+      response: blockchainMessage.account.response || undefined,
+      answered: blockchainMessage.account.answered,
+      createdAt: new Date(), // Blockchain doesn't have timestamp, use current time
+      // Store the original message publicKey as a custom property for reference
+      publicKey: blockchainMessage.publicKey.toString()
+    } as Message;
+  }
+
+  /**
    * Get unanswered messages
    */
-  private async getUnansweredMessages(): Promise<any[]> {
+  private async getUnansweredMessages(): Promise<Message[]> {
     try {
-      if (isDevEnvironment) {
-        console.log('Fetching unanswered messages from blockchain...');
-      }
-
       // Step 1: Get all AI characters that have this execution client as their primary client
       const myPublicKey = this.wallet.publicKey;
       let [appAinftPda] = findAppAinftPDA(this.program.programId);
@@ -305,6 +320,9 @@ export class ExecutionClientService {
         console.log(`Found ${sortedMessages.length} total unanswered messages for all my AI characters`);
       }
 
+      // Convert blockchain messages to the Message interface format
+      const convertedBlockchainMessages = sortedMessages.map(msg => this.convertBlockchainMessageToModel(msg));
+
       // For backward compatibility, also check the database
       const dbMessages = await MessageModel.find({
         answered: false
@@ -315,7 +333,7 @@ export class ExecutionClientService {
       }
 
       // Combine messages from blockchain and database
-      const combinedMessages = [...sortedMessages, ...dbMessages];
+      const combinedMessages = [...convertedBlockchainMessages, ...dbMessages];
 
       if (isDevEnvironment) {
         console.log(`Total unanswered messages: ${combinedMessages.length}`);
@@ -344,9 +362,9 @@ export class ExecutionClientService {
    * Process a message
    * @param message Message to process
    */
-  private async processMessage(message: any): Promise<void> {
+  private async processMessage(message: Message): Promise<void> {
     try {
-      console.log(`Processing message ${message.id}`);
+      console.log(`Processing message for AI character: ${message.aiCharacter}`);
 
       // Collect data for the message
       const collectedData = await this.collectData(message);
@@ -354,7 +372,7 @@ export class ExecutionClientService {
       // Enhance the prompt
       const enhancedPrompt = await this.enhancePrompt(
         message.content,
-        { messageId: message.id, collectedData }
+        { messageId: message.id || message.publicKey, collectedData }
       );
 
       // Generate response using LLM
@@ -363,15 +381,15 @@ export class ExecutionClientService {
       // Process the response
       const processedResponse = await this.processResponse(
         response,
-        { messageId: message.id, collectedData }
+        { messageId: message.id || message.publicKey, collectedData }
       );
 
       // Write response to blockchain
       await this.writeResponse(message, processedResponse);
 
-      console.log(`Processed message ${message.id}`);
+      console.log(`Processed message for AI character: ${message.aiCharacter}`);
     } catch (error) {
-      console.error(`Failed to process message ${message.id}:`, error);
+      console.error(`Failed to process message for AI character ${message.aiCharacter}:`, error);
     }
   }
 
@@ -393,7 +411,7 @@ export class ExecutionClientService {
         try {
           const data = await (collector as any).collectData(
             ['finance', 'market'],
-            { messageId: message.id }
+            { messageId: message.id || message.publicKey }
           );
 
           collectedData[collector.id] = data;
@@ -521,22 +539,13 @@ export class ExecutionClientService {
    * @param message Message to write response for
    * @param response Response to write
    */
-  private async writeResponse(message: any, response: string): Promise<void> {
+  private async writeResponse(message: Message, response: string): Promise<void> {
     try {
       // Check if this is a blockchain message or a database message
-      if (message.publicKey && message.account) {
+      if (message.publicKey) {
         // This is a blockchain message
         if (isDevEnvironment) {
-          console.log(`Writing response to blockchain for message at address: ${message.publicKey.toString()}`);
-        }
-
-        // Get the message account
-        const messageAccount = message.account;
-        const aiCharacter = messageAccount.aiCharacter;
-
-        if (isDevEnvironment) {
-          console.log(`Message AI character: ${aiCharacter.toString()}`);
-          console.log(`Response content: ${response.substring(0, 100)}...`);
+          console.log(`Writing response to blockchain for message at address: ${message.publicKey}`);
         }
 
         // Find the app ainft PDA
@@ -550,6 +559,7 @@ export class ExecutionClientService {
         }
 
         // Get the AI character account to access its compute token account
+        const aiCharacter = new PublicKey(message.aiCharacter);
         const aiCharacterAccount = await this.program.account.aiCharacterNft.fetch(aiCharacter);
         const aiCharacterComputeTokenAccount = aiCharacterAccount.computeTokenAccount;
 
@@ -618,7 +628,7 @@ export class ExecutionClientService {
           const tx = await this.program.methods
             .writeResponse(writeResponse)
             .accounts({
-              message: message.publicKey,
+              message: new PublicKey(message.publicKey),
               aiNft: appAinftPda,
               aiCharacterNft: aiCharacter,
               aiCharacterComputeTokenAccount: aiCharacterComputeTokenAccount,
@@ -635,7 +645,7 @@ export class ExecutionClientService {
 
           if (isDevEnvironment) {
             console.log(`Transaction submitted: ${tx}`);
-            console.log(`Answered blockchain message at address: ${message.publicKey.toString()}`);
+            console.log(`Answered blockchain message at address: ${message.publicKey}`);
           }
         } catch (txError) {
           console.error('Failed to submit blockchain transaction:', txError);
@@ -658,9 +668,9 @@ export class ExecutionClientService {
         }
       }
 
-      console.log(`Wrote response for message ${message.id || message.publicKey.toString()}`);
+      console.log(`Wrote response for message ${message.id || message.publicKey}`);
     } catch (error) {
-      console.error(`Failed to write response for message ${message.id || (message.publicKey ? message.publicKey.toString() : 'unknown')}:`, error);
+      console.error(`Failed to write response for message ${message.id || message.publicKey || 'unknown'}:`, error);
     }
   }
 

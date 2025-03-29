@@ -6,7 +6,9 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use crate::{
     error::AiNftError,
     events::MessageSent,
-    state::{AiCharacterNFT, AiNft, MessageAiCharacter},
+    state::{
+        message_constants::MESSAGE_AI_CHARACTER_SIZE, AiCharacterNFT, AiNft, MessageAiCharacter,
+    },
 };
 
 #[derive(Accounts)]
@@ -14,7 +16,7 @@ pub struct SendMessage<'info> {
     #[account(
         init,
         payer = sender,
-        space = 8 + size_of::<MessageAiCharacter>(),
+        space = MESSAGE_AI_CHARACTER_SIZE,
         seeds = [
             b"message",
             ai_nft.key().as_ref(),
