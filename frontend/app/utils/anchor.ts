@@ -189,7 +189,8 @@ export const createAiNft = async (
     program: Program<Ainft>,
     wallet: WalletContextState,
     connection: Connection,
-    config: CharacterConfig
+    config: CharacterConfig,
+    url: string
 ) => {
     if (!program) throw new Error('Program not initialized');
     if (!wallet) throw new Error('Wallet not initialized');
@@ -236,7 +237,7 @@ export const createAiNft = async (
         const ix = await program.methods
             .mintAinft(
                 config.name,
-                "https://ok.no",
+                url
             )
             .accounts({
                 payer: wallet.publicKey,
@@ -256,11 +257,8 @@ export const createAiNft = async (
         const computeTokenAccount = await program.methods
             .createAiCharacterComputeAccount()
             .accounts({
-                aiNft: appAinftPda,
                 aiCharacter: aiCharacter,
                 computeMint: computeMint,
-                aiCharacterMint: aiCharacterMint,
-                aiCharacterMetadata: aiCharacterMetadata,
                 aiCharacterComputeTokenAccount,
                 payer: wallet.publicKey,
             })
@@ -271,7 +269,7 @@ export const createAiNft = async (
         const messageV0 = new TransactionMessage({
             payerKey: wallet.publicKey,
             recentBlockhash: latestBlockhash.blockhash,
-            instructions: [computeTokenAccount, ix]
+            instructions: [ix, computeTokenAccount]
         }).compileToV0Message();
 
         const transaction = new VersionedTransaction(messageV0);
@@ -870,7 +868,7 @@ export async function getMessagesForAiNft(
             },
 
         ]);
-
+        console.log("messages: ", messages)
         // Sort messages by timestamp (assuming there's a timestamp field)
         return messages.sort((a, b) => {
             const timestampA = a.account.timestamp?.toNumber() || 0;
@@ -1023,10 +1021,11 @@ export const checkAiCharacterComputeAccount = async (
         const [aiCharacter] = findAiCharacterPDA(aiCharacterMint);
 
         // Get the associated token address for the AI character's compute token account
-        const aiCharacterComputeTokenAccount = await splToken.getAssociatedTokenAddress(
-            computeMint,
-            aiCharacter
-        );
+        const aiCharacterComputeTokenAccount = anchor.utils.token.associatedAddress({
+            mint: computeMint,
+            owner: aiCharacter
+        })
+
 
         // Check if the account exists
         const account = await connection.getAccountInfo(aiCharacterComputeTokenAccount);

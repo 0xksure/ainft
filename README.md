@@ -97,7 +97,8 @@ pay for off chain compute.
 9. Transfer aiNFT. Allow the holder of the aiNFT to transfer it to another account. 
 
 # TODO
-- Implement write message
-- Update AINFT 
-- Create execution client
-- create simple client that reads messages of ainfts, combine with earlier context, write answer back. Client needs to be able to write to the anchor program
+[ ] Finish 
+[ ] Use on chain config to build the prompt  
+[ ] Implement support for postgresql for storing data to build prompt 
+[ ] Allow AI to generate actively make choices
+[ ] Make on chain actions from execution client

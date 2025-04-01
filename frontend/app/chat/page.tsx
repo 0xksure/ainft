@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { programs } from "@metaplex/js";
 import { generatePixelatedImage } from '../utils/pixelate';
 import { decodeByteArray, decodeByteArrays } from '../utils/byteDecoder';
+import { bytesToString } from '../utils/metadata';
 import { useToast } from '../components/ui/toast';
 
 // Message type definition
@@ -96,13 +97,8 @@ export default function ChatPage() {
                             const metadataPDA = await Metadata.getPDA(item.account.characterNftMint);
                             const tokenMetadata = await Metadata.load(connection, metadataPDA);
 
-                            // Decode the name from byte array
-                            const decodedName = item.account.characterConfig?.name
-                                ? decodeByteArray(item.account.characterConfig.name)
-                                : '';
-
-                            // Use the decoded name or fallback to a default
-                            const name = decodedName || 'Unnamed AI';
+                            // Get name from token metadata
+                            const name = tokenMetadata.data.data.name || 'Unnamed AI';
 
                             // Get description from bio fields if available
                             const bioTexts = item.account.characterConfig?.bio
@@ -132,11 +128,12 @@ export default function ChatPage() {
                         } catch (err) {
                             console.error('Error loading metadata for NFT:', err);
 
-                            // Even if metadata loading fails, try to decode the name
+                            // Even if metadata loading fails, try to get a name
                             let name = 'Unnamed AI';
                             try {
                                 if (item.account.characterConfig && item.account.characterConfig.name) {
-                                    name = decodeByteArray(item.account.characterConfig.name) || name;
+                                    // Fallback to character config name if metadata failed
+                                    name = bytesToString(Array.from(item.account.characterConfig.name)) || name;
                                 }
                             } catch (decodeErr) {
                                 console.error('Error decoding name:', decodeErr);
@@ -600,7 +597,7 @@ export default function ChatPage() {
                                                         step="0.1"
                                                         value={donationAmount}
                                                         onChange={(e) => setDonationAmount(parseFloat(e.target.value))}
-                                                        className="w-16 px-2 py-1 bg-gray-700 rounded text-sm"
+                                                        className="w-16 px-2 py-1 bg-gray-700 rounded-l border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                                     />
                                                     <button
                                                         onClick={handleDonation}

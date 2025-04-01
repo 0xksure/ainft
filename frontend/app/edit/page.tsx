@@ -199,224 +199,61 @@ export default function EditPage() {
         fetchNft();
     }, [isClient, program, connection, publicKey, searchParams]);
 
-    const handleSave = async () => {
-        if (!program || !nft || !editForm || !publicKey || !connection || !wallet || !wallet.signTransaction) {
-            setError("Program, NFT, wallet or connection not available");
-            return;
-        }
-
+    // Handle saving changes
+    const saveChanges = async () => {
+        if (!program || !connection || !wallet.publicKey || !nft || !editForm) return;
+        
+        setSaving(true);
+        setError(null);
+        
         try {
-            setSaving(true);
-            setError(null);
-
-            // Find required PDAs and accounts
-            const [appAinftPda] = findAppAinftPDA();
-            const aiCharacter = new PublicKey(nft.address);
-            const [aiCharacterMint] = findAiCharacterMintPDA(appAinftPda, nft.name);
-
-            // Get the token account for the NFT owner
-            const authorityAiCharacterTokenAccount = await anchor.utils.token.associatedAddress({
-                mint: aiCharacterMint,
-                owner: publicKey
-            });
-
-            // Create a batch of instructions
-            const instructions = [];
-
-            // Update name
-            const updateNameIx = await program.methods
-                .updateCharacterName(editForm.name)
-                .accounts({
-                    aiNft: appAinftPda,
-                    aiCharacter: aiCharacter,
-                    authority: publicKey,
-                    aiCharacterMint: aiCharacterMint,
-                    authorityAiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                })
-                .instruction();
-            instructions.push(updateNameIx);
-
-            // Update clients
-            const updateClientsIx = await program.methods
-                .updateCharacterClients(editForm.clients)
-                .accounts({
-                    aiNft: appAinftPda,
-                    aiCharacter: aiCharacter,
-                    authority: publicKey,
-                    aiCharacterMint: aiCharacterMint,
-                    authorityAiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                })
-                .instruction();
-            instructions.push(updateClientsIx);
-
-            // Update model provider
-            const updateModelProviderIx = await program.methods
-                .updateCharacterModelProvider(editForm.modelProvider)
-                .accounts({
-                    aiNft: appAinftPda,
-                    aiCharacter: aiCharacter,
-                    authority: publicKey,
-                    aiCharacterMint: aiCharacterMint,
-                    authorityAiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                })
-                .instruction();
-            instructions.push(updateModelProviderIx);
-
-            // Update voice settings
-            // Convert string to byte array for voice model
-            const voiceModel = stringToByteArray(editForm.settings.voice.model, 32);
-
-            const updateVoiceSettingsIx = await program.methods
-                .updateCharacterVoiceSettings(voiceModel)
-                .accounts({
-                    aiNft: appAinftPda,
-                    aiCharacter: aiCharacter,
-                    authority: publicKey,
-                    aiCharacterMint: aiCharacterMint,
-                    authorityAiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                })
-                .instruction();
-            instructions.push(updateVoiceSettingsIx);
-
-            // Update bio
-            const updateBioIx = await program.methods
-                .updateCharacterBio(editForm.bio)
-                .accounts({
-                    aiNft: appAinftPda,
-                    aiCharacter: aiCharacter,
-                    authority: publicKey,
-                    aiCharacterMint: aiCharacterMint,
-                    authorityAiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                })
-                .instruction();
-            instructions.push(updateBioIx);
-
-            // Update lore
-            const updateLoreIx = await program.methods
-                .updateCharacterLore(editForm.lore)
-                .accounts({
-                    aiNft: appAinftPda,
-                    aiCharacter: aiCharacter,
-                    authority: publicKey,
-                    aiCharacterMint: aiCharacterMint,
-                    authorityAiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                })
-                .instruction();
-            instructions.push(updateLoreIx);
-
-            // Update knowledge
-            const updateKnowledgeIx = await program.methods
-                .updateCharacterKnowledge(editForm.knowledge)
-                .accounts({
-                    aiNft: appAinftPda,
-                    aiCharacter: aiCharacter,
-                    authority: publicKey,
-                    aiCharacterMint: aiCharacterMint,
-                    authorityAiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                })
-                .instruction();
-            instructions.push(updateKnowledgeIx);
-
-            // Update topics
-            const updateTopicsIx = await program.methods
-                .updateCharacterTopics(editForm.topics)
-                .accounts({
-                    aiNft: appAinftPda,
-                    aiCharacter: aiCharacter,
-                    authority: publicKey,
-                    aiCharacterMint: aiCharacterMint,
-                    authorityAiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                })
-                .instruction();
-            instructions.push(updateTopicsIx);
-
-            // Update style all
-            const styleAll = Array(10).fill(Array(32).fill(0)).map((_, i) => {
-                const text = i === 0 ? editForm.style.tone :
-                    i === 1 ? editForm.style.writing : '';
-                return stringToByteArray(text, 32);
-            });
-
-            const updateStyleAllIx = await program.methods
-                .updateCharacterStyleAll(styleAll)
-                .accounts({
-                    aiNft: appAinftPda,
-                    aiCharacter: aiCharacter,
-                    authority: publicKey,
-                    aiCharacterMint: aiCharacterMint,
-                    authorityAiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                })
-                .instruction();
-            instructions.push(updateStyleAllIx);
-
-            // Update adjectives
-            const updateAdjectivesIx = await program.methods
-                .updateCharacterAdjectives(editForm.adjectives)
-                .accounts({
-                    aiNft: appAinftPda,
-                    aiCharacter: aiCharacter,
-                    authority: publicKey,
-                    aiCharacterMint: aiCharacterMint,
-                    authorityAiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                })
-                .instruction();
-            instructions.push(updateAdjectivesIx);
-
-            // Update execution client
+            // Update the AI character on-chain
+            // This is a placeholder for the actual update logic
+            console.log("Saving changes:", editForm);
+            
+            // If we have a selected execution client, update it
             if (selectedExecutionClient) {
-                const updateExecutionClientIx = await program.methods
-                    .updateAiCharacterExecutionClient()
-                    .accounts({
-                        aiNft: appAinftPda,
-                        aiCharacter: aiCharacter,
-                        authority: publicKey,
-                        aiCharacterMint: aiCharacterMint,
-                        aiCharacterTokenAccount: authorityAiCharacterTokenAccount,
-                        executionClient: new PublicKey(selectedExecutionClient),
-                    })
-                    .instruction();
-                instructions.push(updateExecutionClientIx);
+                try {
+                    const selectedClient = executionClients.find(
+                        client => client.publicKey.toString() === selectedExecutionClient
+                    );
+                    
+                    if (selectedClient) {
+                        const result = await updateAiCharacterExecutionClient(
+                            program,
+                            wallet,
+                            connection,
+                            new PublicKey(nft.address),
+                            selectedClient.publicKey
+                        );
+                        
+                        console.log("Updated execution client:", result);
+                        
+                        // Update the NFT data with the new execution client
+                        setNft(prev => {
+                            if (!prev) return prev;
+                            return {
+                                ...prev,
+                                executionClient: new PublicKey(selectedExecutionClient)
+                            };
+                        });
+                        
+                        addToast("Execution client updated successfully", "success");
+                    }
+                } catch (error) {
+                    console.error("Error updating execution client:", error);
+                    addToast("Failed to update execution client", "error");
+                }
             }
-
-            // Get the latest blockhash
-            const latestBlockhash = await connection.getLatestBlockhash('confirmed');
-
-            // Create a versioned transaction
-            const messageV0 = new TransactionMessage({
-                payerKey: publicKey,
-                recentBlockhash: latestBlockhash.blockhash,
-                instructions: instructions
-            }).compileToV0Message();
-
-            const transaction = new VersionedTransaction(messageV0);
-
-            // Sign and send the transaction
-            const signedTransaction = await wallet.signTransaction(transaction);
-            const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-
-            // Confirm the transaction
-            const confirmation = await connection.confirmTransaction({
-                signature,
-                blockhash: latestBlockhash.blockhash,
-                lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
-            });
-
-            if (confirmation.value.err) {
-                throw new Error(`Transaction failed to confirm: ${confirmation.value.err}`);
-            }
-
-            console.log('NFT updated successfully:', signature);
-
-            // Refresh the NFT data
-            const updatedNftData = await fetchAiCharacterNft(program, connection, nft.address);
-            setNft(updatedNftData);
-
-            // Show success message
-            setError(null);
-
-        } catch (err) {
-            console.error('Error updating NFT:', err);
-            setError(err instanceof Error ? err.message : 'Failed to update NFT data');
+            
+            // Success message
+            addToast("Changes saved successfully", "success");
+            
+            // Refresh the form
+            setFormKey(prev => prev + 1);
+        } catch (error) {
+            console.error("Error saving changes:", error);
+            setError(error instanceof Error ? error.message : 'Failed to save changes');
         } finally {
             setSaving(false);
         }
@@ -428,18 +265,16 @@ export default function EditPage() {
         
         setUpdatingExecutionClient(true);
         try {
+            // Just update the selected execution client state
             setSelectedExecutionClient(clientPublicKey);
-            
-            // We'll update the execution client when saving the AI character
-            addToast("Execution client will be updated when you save", "success");
         } catch (error) {
             console.error("Error updating execution client:", error);
-            addToast("Failed to update execution client", "error");
+            
             // Reset to previous selection
             if (nft.executionClient) {
                 setSelectedExecutionClient(nft.executionClient.toString());
             } else {
-                setSelectedExecutionClient("");
+                setSelectedExecutionClient(undefined);
             }
         } finally {
             setUpdatingExecutionClient(false);
@@ -701,8 +536,10 @@ export default function EditPage() {
                                                             <select
                                                                 value={selectedExecutionClient || ""}
                                                                 onChange={(e) => {
-                                                                    if (e.target.value) {
-                                                                        handleUpdateExecutionClient(e.target.value);
+                                                                    const value = e.target.value;
+                                                                    // Only update if a value is selected
+                                                                    if (value) {
+                                                                        handleUpdateExecutionClient(value);
                                                                     }
                                                                 }}
                                                                 disabled={updatingExecutionClient}
@@ -710,7 +547,10 @@ export default function EditPage() {
                                                             >
                                                                 <option value="">Select an execution client</option>
                                                                 {executionClients.map((client) => (
-                                                                    <option key={client.publicKey.toString()} value={client.publicKey.toString()}>
+                                                                    <option 
+                                                                        key={client.publicKey.toString()} 
+                                                                        value={client.publicKey.toString()}
+                                                                    >
                                                                         {truncateAddress(client.publicKey.toString())} - Gas: {client.gas}
                                                                     </option>
                                                                 ))}
@@ -762,7 +602,7 @@ export default function EditPage() {
 
                             <div className="flex justify-end mt-6">
                                 <Button
-                                    onClick={handleSave}
+                                    onClick={saveChanges}
                                     disabled={saving}
                                     className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
                                 >

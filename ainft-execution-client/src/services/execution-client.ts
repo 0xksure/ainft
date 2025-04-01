@@ -233,6 +233,7 @@ export class ExecutionClientService {
    */
   private async getUnansweredMessages(): Promise<Message[]> {
     try {
+      console.log('[DEBUG] Starting getUnansweredMessages method');
       // Step 1: Get all AI characters that have this execution client as their primary client
       const myPublicKey = this.wallet.publicKey;
       let [appAinftPda] = findAppAinftPDA(this.program.programId);
@@ -241,11 +242,15 @@ export class ExecutionClientService {
         this.program.programId
       );
 
+      console.log('[DEBUG] App AINFT PDA:', appAinftPda.toString());
+      console.log('[DEBUG] My Execution Client PDA:', myExecutionClient.toString());
+
       if (isDevEnvironment) {
         console.log('Execution client public key:', myPublicKey.toString());
       }
 
       // Fetch all AI character NFTs
+      console.log('[DEBUG] Fetching all AI character NFTs');
       const aiCharacters = await this.program.account.aiCharacterNft.all();
 
       if (isDevEnvironment) {
@@ -271,6 +276,7 @@ export class ExecutionClientService {
       }
 
       if (myAiCharacters.length === 0) {
+        console.log('[DEBUG] No AI characters found for this execution client');
         return [];
       }
 
@@ -278,42 +284,55 @@ export class ExecutionClientService {
       const allMessages = [];
 
       for (const aiCharacter of myAiCharacters) {
-        // Fetch messages for this AI character
-        const aiCharacterPubkey = aiCharacter.publicKey;
+        try {
+          // Fetch messages for this AI character
+          const aiCharacterPubkey = aiCharacter.publicKey;
 
-        if (isDevEnvironment) {
-          console.log(`Fetching messages for AI character: ${aiCharacterPubkey.toString()}`);
+          if (isDevEnvironment) {
+            console.log(`Fetching messages for AI character: ${aiCharacterPubkey.toString()}`);
+          }
+
+          // Fetch all messages for the specific AI NFT
+          console.log(`[DEBUG] Fetching messages for AI character: ${aiCharacterPubkey.toString()}`);
+          try {
+            const messages = await this.program.account.messageAiCharacter.all();
+
+            console.log(`[DEBUG] Successfully fetched ${messages.length} messages`);
+
+            if (isDevEnvironment) {
+              console.log(`Found ${messages.length} total messages for AI character ${aiCharacterPubkey.toString()}`);
+            }
+
+            // Filter for unanswered messages
+            const unansweredMessages = messages.filter(msg => !msg.account.answered);
+
+            if (isDevEnvironment) {
+              console.log(`Found ${unansweredMessages.length} unanswered messages for AI character ${aiCharacterPubkey.toString()}`);
+            }
+
+            // Add to our collection
+            allMessages.push(...unansweredMessages);
+          } catch (fetchError) {
+            console.error(`[DEBUG] Error fetching messages for AI character: ${aiCharacterPubkey.toString()}`, fetchError);
+            throw fetchError; // Re-throw to be caught by the outer try-catch
+          }
+        } catch (error) {
+          console.error(`Error fetching messages for AI character ${aiCharacter.publicKey.toString()}:`, error);
+          // Log additional details about the error
+          if (error instanceof RangeError) {
+            console.error(`[DEBUG] Buffer range error details - code: ${error}, message: ${error.message}`);
+            if (error.stack) {
+              console.error(`[DEBUG] Error stack trace: ${error.stack}`);
+            }
+          }
+          // Continue with other AI characters even if one fails
         }
-
-        // Fetch all messages for the specific AI NFT
-        const messages = await this.program.account.messageAiCharacter.all([
-          {
-            memcmp: {
-              offset: 8 + 32, // Skip the discriminator
-              bytes: aiCharacterPubkey.toBase58(),
-            },
-          },
-        ]);
-
-        if (isDevEnvironment) {
-          console.log(`Found ${messages.length} total messages for AI character ${aiCharacterPubkey.toString()}`);
-        }
-
-        // Filter for unanswered messages
-        const unansweredMessages = messages.filter(msg => !msg.account.answered);
-
-        if (isDevEnvironment) {
-          console.log(`Found ${unansweredMessages.length} unanswered messages for AI character ${aiCharacterPubkey.toString()}`);
-        }
-
-        // Add to our collection
-        allMessages.push(...unansweredMessages);
       }
 
       // Sort messages by timestamp (if available)
+      console.log(`[DEBUG] Sorting ${allMessages.length} messages`);
       const sortedMessages = allMessages.sort((a, b) => {
         // If there's a timestamp field, sort by it
-
         return 0; // No sorting if no timestamp
       });
 
@@ -321,10 +340,47 @@ export class ExecutionClientService {
         console.log(`Found ${sortedMessages.length} total unanswered messages for all my AI characters`);
       }
 
-      // Convert blockchain messages to the Message interface format
-      const convertedBlockchainMessages = sortedMessages.map(msg => this.convertBlockchainMessageToModel(msg));
+      // Convert blockchain messages to the Message interface format with error handling
+      console.log(`[DEBUG] Converting ${sortedMessages.length} blockchain messages to model format`);
+      const convertedBlockchainMessages = [];
+      for (const msg of sortedMessages) {
+        try {
+          console.log(`[DEBUG] Converting message: ${msg.publicKey.toString()}`);
+          console.log(`[DEBUG] Message account data size: ${Object.keys(msg.account).length} properties`);
+
+          // Log the structure of the message account
+          console.log('[DEBUG] Message account structure:', JSON.stringify({
+            aiNft: msg.account.aiNft?.toString() || 'undefined',
+            aiCharacter: msg.account.aiCharacter?.toString() || 'undefined',
+            sender: msg.account.sender?.toString() || 'undefined',
+            contentLength: msg.account.content?.length || 0,
+            answered: msg.account.answered || false
+          }));
+
+          const convertedMsg = this.convertBlockchainMessageToModel(msg);
+          convertedBlockchainMessages.push(convertedMsg);
+          console.log(`[DEBUG] Successfully converted message ${msg.publicKey.toString()}`);
+        } catch (error) {
+          console.error('[DEBUG] Error converting blockchain message to model:', error);
+          if (error instanceof RangeError) {
+            console.error(`[DEBUG] Buffer data error - code: ${error}, message: ${error.message}`);
+            // Try to log information about the buffer
+            try {
+              console.error(`[DEBUG] Message public key: ${msg.publicKey.toString()}`);
+              console.error(`[DEBUG] Message account data available: ${!!msg.account}`);
+              if (msg.account) {
+                console.error(`[DEBUG] Message account keys: ${Object.keys(msg.account).join(', ')}`);
+              }
+            } catch (logError) {
+              console.error('[DEBUG] Error while trying to log message details:', logError);
+            }
+          }
+          // Skip this message and continue with others
+        }
+      }
 
       // For backward compatibility, also check the database
+      console.log('[DEBUG] Checking database for unanswered messages');
       const dbMessages = await MessageModel.find({
         answered: false
       }).limit(10);
@@ -340,20 +396,26 @@ export class ExecutionClientService {
         console.log(`Total unanswered messages: ${combinedMessages.length}`);
       }
 
+      console.log('[DEBUG] Completed getUnansweredMessages method successfully');
       return combinedMessages;
     } catch (error) {
+      console.error('[DEBUG] Top-level error in getUnansweredMessages:', error);
+      if (error instanceof RangeError) {
+        console.error(`[DEBUG] Top-level buffer range error - code: ${error}, message: ${error.message}`);
+        console.error(`[DEBUG] Error stack: ${error.stack}`);
+      }
       console.error('Failed to get unanswered messages:', error);
 
       // Fallback to database if blockchain query fails
       try {
-        console.warn('Falling back to database for messages');
+        console.warn('[DEBUG] Falling back to database for messages');
         const messages = await MessageModel.find({
           answered: false
         }).limit(10);
 
         return messages;
       } catch (dbError) {
-        console.error('Database fallback also failed:', dbError);
+        console.error('[DEBUG] Database fallback also failed:', dbError);
         return [];
       }
     }
@@ -485,7 +547,7 @@ export class ExecutionClientService {
 
       // Use the LLM service to generate a response
       const response = await llmService.generateCompletion(prompt);
-      
+
       if (isDevEnvironment) {
         console.log('Generated response:', response.substring(0, 100) + '...');
       }

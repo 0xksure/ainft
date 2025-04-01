@@ -160,7 +160,7 @@ export default function ManagePage() {
                         address: item.publicKey.toString(),
                         name: name,
                         description: description,
-                        imageUrl: tokenMetadata.data.data.uri,
+                        imageUrl: tokenMetadata.data.data.uri || '/placeholder-image.png',
                         dateCreated: new Date((item.account as any).createdAt?.toNumber() || Date.now()),
                         hasComputeAccount,
                         executionClient,
@@ -453,29 +453,48 @@ export default function ManagePage() {
                                                         </button>
                                                     </div>
                                                 ) : (
-                                                    <select
-                                                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-600 bg-gray-700 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md"
-                                                        value={nft.executionClient || ''}
-                                                        onChange={(e) => {
-                                                            const selectedClient = executionClients.find(
-                                                                (client) => client.publicKey.toString() === e.target.value
-                                                            );
-                                                            setAiNfts(prev =>
-                                                                prev.map(item =>
-                                                                    item.address === nft.address
-                                                                        ? { ...item, executionClient: e.target.value }
-                                                                        : item
-                                                                )
-                                                            );
-                                                        }}
-                                                    >
-                                                        <option value="">Select Execution Client</option>
-                                                        {executionClients.map((client) => (
-                                                            <option key={client.publicKey.toString()} value={client.publicKey.toString()}>
-                                                                {client.publicKey.toString().substring(0, 4)}...{client.publicKey.toString().substring(client.publicKey.toString().length - 4)}
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                                    <div className="flex flex-col w-full space-y-2">
+                                                        <select
+                                                            className="block w-full pl-3 pr-10 py-2 text-base border-gray-600 bg-gray-700 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md"
+                                                            value={nft.executionClient || ''}
+                                                            onChange={(e) => {
+                                                                if (e.target.value) {
+                                                                    const selectedClient = executionClients.find(
+                                                                        (client) => client.publicKey.toString() === e.target.value
+                                                                    );
+                                                                    
+                                                                    if (selectedClient) {
+                                                                        // First update local state to show selection immediately
+                                                                        setAiNfts(prev =>
+                                                                            prev.map(item =>
+                                                                                item.address === nft.address
+                                                                                    ? { ...item, executionClient: e.target.value }
+                                                                                    : item
+                                                                            )
+                                                                        );
+                                                                        
+                                                                        // Then update on blockchain
+                                                                        handleUpdateExecutionClient(nft, selectedClient);
+                                                                    }
+                                                                }
+                                                            }}
+                                                        >
+                                                            <option value="">Select Execution Client</option>
+                                                            {executionClients.map((client) => (
+                                                                <option 
+                                                                    key={client.publicKey.toString()} 
+                                                                    value={client.publicKey.toString()}
+                                                                >
+                                                                    {client.publicKey.toString().substring(0, 4)}...{client.publicKey.toString().substring(client.publicKey.toString().length - 4)}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        {updatingExecutionClient[nft.address] && (
+                                                            <div className="text-center">
+                                                                <span className="text-xs text-blue-400">Updating execution client...</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>

@@ -10,6 +10,8 @@ pub struct MessageAiCharacter {
     pub content: String,          // MAX_CONTENT_LENGTH!
     pub response: Option<String>, // MAX_RESPONSE_LENGTH
     pub answered: bool,           // 1 byte
+    pub created_at: i64,          // 8 bytes
+    pub updated_at: i64,          // 8 bytes
     pub bump: u8,                 // 1 byte
 }
 
@@ -18,6 +20,7 @@ pub mod message_constants {
     pub const PUBKEY_SIZE: usize = 32;
     pub const BOOL_SIZE: usize = 1;
     pub const U8_SIZE: usize = 1;
+    pub const I64_SIZE: usize = 8;
     pub const STRING_PREFIX_SIZE: usize = 4; // Size of the length prefix for strings
     pub const OPTION_PREFIX_SIZE: usize = 1; // Size of the discriminator for Option
 
@@ -31,6 +34,8 @@ pub mod message_constants {
         STRING_PREFIX_SIZE + MAX_CONTENT_LENGTH + // content
         OPTION_PREFIX_SIZE + STRING_PREFIX_SIZE + MAX_RESPONSE_LENGTH + // response
         BOOL_SIZE +                  // answered
+        I64_SIZE +                   // created_at
+        I64_SIZE +                   // updated_at
         U8_SIZE; // bump
 }
 
@@ -42,6 +47,7 @@ impl MessageAiCharacter {
         content: &str,
         bump: u8,
     ) -> Self {
+        let current_timestamp = Clock::get().unwrap().unix_timestamp;
         Self {
             ai_nft: ai_nft.key(),
             ai_character: ai_character.key(),
@@ -49,6 +55,8 @@ impl MessageAiCharacter {
             content: content.to_string(),
             response: None,
             answered: false,
+            created_at: current_timestamp,
+            updated_at: current_timestamp,
             bump,
         }
     }
@@ -62,5 +70,6 @@ impl MessageAiCharacter {
 
         self.response = Some(response_str.to_string());
         self.answered = true;
+        self.updated_at = Clock::get().unwrap().unix_timestamp;
     }
 }
