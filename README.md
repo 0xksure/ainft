@@ -97,8 +97,8 @@ pay for off chain compute.
 9. Transfer aiNFT. Allow the holder of the aiNFT to transfer it to another account. 
 
 # TODO
-[ ] Finish 
-[ ] Use on chain config to build the prompt  
-[ ] Implement support for postgresql for storing data to build prompt 
+[x] Allow user to attach compute to aiNFT
+[ ] Use on-chain config to build the prompt  
+[ ] Implement support for mongodb for storing data to build prompt 
 [ ] Allow AI to generate actively make choices
 [ ] Make on chain actions from execution client
