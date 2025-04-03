@@ -102,3 +102,4 @@ pay for off chain compute.
 [ ] Implement support for mongodb for storing data to build prompt 
 [ ] Allow AI to generate actively make choices
 [ ] Make on chain actions from execution client
+[ ] Estimate cost of storing config and transaction costs
