@@ -2,6 +2,8 @@ use anchor_lang::error_code;
 
 #[error_code]
 pub enum AiNftError {
+    #[msg("Compute mint already initialized")]
+    ComputeMintAlreadyInitialized,
     #[msg("Invalid config field")]
     InvalidConfigField,
     #[msg("Invalid execution client bump")]

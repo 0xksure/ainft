@@ -1,7 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { BN, Program } from "@coral-xyz/anchor";
 import { Ainft } from "../target/types/ainft";
-import { LAMPORTS_PER_SOL, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction } from "@solana/web3.js";
+import { LAMPORTS_PER_SOL, PublicKey, Signer, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import * as spl from "@solana/spl-token"
 import { assert } from "chai";
@@ -26,8 +26,6 @@ interface Config {
   adjectives: string[];
 }
 
-
-
 describe("ainft", async () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
@@ -44,6 +42,10 @@ describe("ainft", async () => {
     owner: payer.publicKey
   });
 
+  // Create an external token mint outside of the program
+  let stakerComputeAccount: PublicKey;
+  const mintAmount = 200_000_000_000;
+
   beforeEach(async function () {
     // Setup payer and airdrop
     const signature = await provider.connection.requestAirdrop(
@@ -51,7 +53,6 @@ describe("ainft", async () => {
       20 * anchor.web3.LAMPORTS_PER_SOL
     );
     await provider.connection.confirmTransaction(signature);
-
 
     // Create the AI NFT collection
     const defaultExecutionClient = anchor.web3.Keypair.generate().publicKey;
@@ -62,7 +63,7 @@ describe("ainft", async () => {
       defaultExecutionClient: defaultExecutionClient,
       mintPrice: new BN(100),
       maxSupply: new BN(100),
-      computeMint: computeMint,
+      computeMint: PublicKey.default, // Set to default for external mint
     };
     console.log("defaultExecutionClient", defaultExecutionClient.toBase58());
     await program.methods
@@ -76,40 +77,68 @@ describe("ainft", async () => {
       })
       .signers([payer])
       .rpc();
-
+    console.log("ok")
     // Verify the collection was created correctly
     var ainftAccount = await program.account.aiNft.fetch(appAinftPda);
     console.log("ainftAccount", ainftAccount);
     assert.ok(ainftAccount.authority.equals(payer.publicKey), "Authority mismatch");
     assert.ok(ainftAccount.masterMint.toBase58() === masterMint.toBase58(), "Master mint mismatch");
-    assert.ok(ainftAccount.computeMint.equals(PublicKey.default), "Compute mint mismatch");
+    assert.ok(ainftAccount.computeMint.equals(PublicKey.default), "Compute mint should be default");
     assert.equal(ainftAccount.mintCount.toString(), "0", "Mint count should be 0");
 
+    // Create an external token mint outside of the program
+    console.log("Creating external token mint");
+    var externalComputeMint = await spl.createMint(
+      provider.connection,
+      payer,
+      payer.publicKey,  // mint authority
+      null,  // freeze authority (optional)
+      9,  // decimals (same as in the program),
+    );
+    console.log("External token mint created:", externalComputeMint.toBase58());
 
-    // create compute mint
-    console.log("Creating compute mint");
-    console.log("appAinftPda", appAinftPda.toBase58());
-    console.log("computeMint", computeMint.toBase58());
-    console.log("payer", payer.publicKey.toBase58());
+    // Create a token account for the payer
+    const payerTokenAccount = await spl.getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      payer,
+      externalComputeMint,
+      payer.publicKey
+    );
+    stakerComputeAccount = payerTokenAccount.address;
+
+    console.log("Minting external tokens");
+    await spl.mintTo(
+      provider.connection,
+      payer,
+      externalComputeMint,
+      payerTokenAccount.address,
+      payer,
+      mintAmount,
+      [payer],
+    );
+
+    // Verify the tokens were minted
+    const payerTokenBalance = await provider.connection.getTokenAccountBalance(stakerComputeAccount);
+    assert.equal(payerTokenBalance.value.amount, mintAmount.toString(), "Payer should have the minted tokens");
+
+    // Set the external token as the compute token for the AI NFT
+    console.log("Setting external token as compute token");
     await program.methods
-      .createComputeMint()
+      .setExternalComputeMint()
       .accounts({
         aiNft: appAinftPda,
-        computeMint: computeMint,
-        payer: payer.publicKey,
+        externalComputeMint: externalComputeMint,
+        authority: payer.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
       })
       .signers([payer])
       .rpc();
 
-    // Verify compute mint was created
-    const computeMintAccount = await provider.connection.getAccountInfo(computeMint);
-    console.log("computeMintAccount", computeMintAccount);
-    assert.ok(computeMintAccount !== null, "Compute mint account should exist");
-    assert.ok(computeMintAccount!.owner.equals(TOKEN_PROGRAM_ID), "Compute mint should be owned by token program");
-
-    // Verify AiNft account was updated
-    const ainftWithComputeMint = await program.account.aiNft.fetch(appAinftPda);
-    assert.ok(ainftWithComputeMint.computeMint.equals(computeMint), "Compute mint should be set in AiNft account");
+    // Verify the compute mint was set correctly
+    const updatedAinftAccount = await program.account.aiNft.fetch(appAinftPda);
+    assert.ok(updatedAinftAccount.computeMint.equals(externalComputeMint), "Compute mint should be set to external token");
+    computeMint = externalComputeMint; // Update the computeMint reference for the rest of the tests
   });
 
   it("Mints an AI NFT successfully", async () => {
@@ -570,20 +599,8 @@ describe("ainft", async () => {
       owner: payer.publicKey
     });
 
-    // Mint some compute tokens to the staker
-    console.log("Minting compute tokens to the staker");
-    const mintAmount = new BN(200_000_000_000);
-    await program.methods
-      .mintCompute(mintAmount)
-      .accounts({
-        aiNft: appAinftPda,
-        computeMint: computeMint,
-        recipientTokenAccount: stakerComputeAccount,
-        destinationUser: payer.publicKey,
-        authority: payer.publicKey,
-      })
-      .signers([payer])
-      .rpc();
+    // The tokens have already been minted in the beforeEach block
+    console.log("Using compute tokens that were minted in the setup");
 
     // transfer 50 compute tokens to the ai character using spl transfer
     console.log("Transferring 50 compute tokens to the ai character");
@@ -751,18 +768,7 @@ describe("ainft", async () => {
       owner: payer.publicKey
     });
 
-    // Mint some compute tokens to the sender for testing
-    await program.methods
-      .mintCompute(new BN(10))
-      .accounts({
-        aiNft: appAinftPda,
-        computeMint: computeMint,
-        recipientTokenAccount: senderComputeTokenAccount,
-        destinationUser: payer.publicKey,
-        authority: payer.publicKey,
-      })
-      .signers([payer])
-      .rpc();
+    // Mint some compute tokens to the
 
     await program.methods
       .sendMessage(messageText)
@@ -876,5 +882,177 @@ describe("ainft", async () => {
     // Verify unstake
     const finalStakerData = await program.account.staker.fetch(staker);
     assert.equal(finalStakerData.amount.toString(), "0");
+  });
+
+  it("Can mint a token outside the program and set it as the compute token", async () => {
+    // Create a new AI NFT collection without initializing the compute mint
+    const payer = provider.wallet
+
+    // Setup payer and airdrop
+    const signature = await provider.connection.requestAirdrop(
+      payer.publicKey,
+      20 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(signature);
+
+    // Create the AI NFT collection
+    const [appAinftPda] = findAppAinftPDA();
+    const [masterMint] = findMasterMintPDA();
+    const [masterMetadata] = findMetadataPDA(masterMint);
+    const masterToken = await anchor.utils.token.associatedAddress({
+      mint: masterMint,
+      owner: payer.publicKey
+    });
+
+    const defaultExecutionClient = anchor.web3.Keypair.generate().publicKey;
+    const createAiNftParams = {
+      name: "External Token Collection",
+      uri: "https://example.com/external-token.json",
+      symbol: "EXT",
+      defaultExecutionClient: defaultExecutionClient,
+      mintPrice: new BN(100),
+      maxSupply: new BN(100),
+      computeMint: PublicKey.default,
+    };
+
+    console.log("Creating AI NFT collection without compute mint");
+    await program.methods
+      .createAppAinft(createAiNftParams)
+      .accounts({
+        aiNft: appAinftPda,
+        masterMint: masterMint,
+        masterToken: masterToken,
+        masterMetadata: masterMetadata,
+        payer: payer.publicKey,
+      })
+      .signers([payer])
+      .rpc();
+
+    // Verify the collection was created correctly
+    const ainftAccount = await program.account.aiNft.fetch(appAinftPda);
+    assert.ok(ainftAccount.authority.equals(payer.publicKey), "Authority mismatch");
+    assert.ok(ainftAccount.masterMint.toBase58() === masterMint.toBase58(), "Master mint mismatch");
+    assert.ok(ainftAccount.computeMint.equals(PublicKey.default), "Compute mint should be default (not initialized)");
+
+    // Create an external token mint outside of the program
+    console.log("Creating external token mint");
+    const externalTokenMint = await spl.createMint(
+      provider.connection,
+      payer,
+      payer.publicKey,  // mint authority
+      null,  // freeze authority (optional)
+      9  // decimals (same as in the program)
+    );
+    console.log("External token mint created:", externalTokenMint.toBase58());
+
+    // Create a token account for the payer
+    const payerTokenAccount = await spl.getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      payer,
+      externalTokenMint,
+      payer.publicKey
+    );
+
+    // Mint some tokens to the payer
+    await spl.mintTo(
+      provider.connection,
+      payer,
+      externalTokenMint,
+      payerTokenAccount.address,
+      payer.publicKey,
+      1000000000000  // 1000 tokens with 9 decimals
+    );
+
+    // Verify the tokens were minted
+    const payerTokenBalance = await provider.connection.getTokenAccountBalance(payerTokenAccount.address);
+    assert.equal(payerTokenBalance.value.amount, "1000000000000", "Payer should have 1000 tokens");
+
+    // Set the external token as the compute token for the AI NFT
+    console.log("Setting external token as compute token");
+    await program.methods
+      .setExternalComputeMint()
+      .accounts({
+        aiNft: appAinftPda,
+        externalComputeMint: externalTokenMint,
+        authority: payer.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([payer])
+      .rpc();
+
+    // Verify the compute mint was set correctly
+    const updatedAinftAccount = await program.account.aiNft.fetch(appAinftPda);
+    assert.ok(updatedAinftAccount.computeMint.equals(externalTokenMint), "Compute mint should be set to external token");
+
+    // Now test using the external token for an AI NFT operation
+    // First mint an AI NFT
+    const aiCharacterName = "External Token Character";
+    const aiNftMetadata = {
+      name: aiCharacterName,
+      uri: "https://example.com/external-character.json",
+    };
+
+    const [aiCharacterMint] = findAiCharacterMintPDA(appAinftPda, aiNftMetadata.name);
+    const [aiCharacter] = findAiCharacterPDA(aiCharacterMint);
+    const [aiCharacterMetadata] = findMetadataPDA(aiCharacterMint);
+
+    const payerAiCharacterTokenAccount = await anchor.utils.token.associatedAddress({
+      mint: aiCharacterMint,
+      owner: payer.publicKey
+    });
+
+    console.log("Minting AI character");
+    await program.methods
+      .mintAinft(aiNftMetadata.name, aiNftMetadata.uri)
+      .accounts({
+        payer: payer.publicKey,
+        aiNft: appAinftPda,
+        aiCharacter: aiCharacter,
+        aiCharacterMint: aiCharacterMint,
+        aiCharacterMetadata: aiCharacterMetadata,
+        payerAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+      })
+      .signers([payer])
+      .rpc();
+
+    // Create compute token account for the AI character
+    const aiCharacterComputeTokenAccount = await anchor.utils.token.associatedAddress({
+      mint: externalTokenMint,
+      owner: aiCharacter
+    });
+
+    console.log("Creating AI character compute account");
+    await program.methods
+      .createAiCharacterComputeAccount()
+      .accounts({
+        aiNft: appAinftPda,
+        aiCharacter: aiCharacter,
+        aiCharacterMint: aiCharacterMint,
+        computeMint: externalTokenMint,
+        aiCharacterMetadata: aiCharacterMetadata,
+        aiCharacterComputeTokenAccount: aiCharacterComputeTokenAccount,
+        payer: payer.publicKey,
+      })
+      .signers([payer])
+      .rpc();
+
+    // Transfer some tokens to the AI character
+    console.log("Transferring tokens to the AI character");
+    const transferIx = await spl.createTransferInstruction(
+      payerTokenAccount.address,
+      aiCharacterComputeTokenAccount,
+      payer.publicKey,
+      100000000000  // 100 tokens with 9 decimals
+    );
+
+    const tx = new Transaction().add(transferIx);
+    await provider.sendAndConfirm(tx, [payer]);
+
+    // Verify the tokens were transferred
+    const aiCharacterTokenBalance = await provider.connection.getTokenAccountBalance(aiCharacterComputeTokenAccount);
+    assert.equal(aiCharacterTokenBalance.value.amount, "100000000000", "AI character should have 100 tokens");
+
+    console.log("Successfully used externally minted token as compute token");
   });
 });

@@ -55,9 +55,12 @@ pub mod ainft {
         instructions::create_compute_mint_handler(ctx)
     }
 
-    /// Mints compute tokens to an AI NFT
-    pub fn mint_compute(ctx: Context<MintCompute>, amount: u64) -> Result<()> {
-        instructions::mint_compute_handler(ctx, amount)
+    /// Sets an externally created token as the compute mint for an AI NFT
+    ///
+    /// This allows the admin to use a token that was minted outside the program
+    /// as the compute token for the AI NFT.
+    pub fn set_external_compute_mint(ctx: Context<SetExternalComputeMint>) -> Result<()> {
+        instructions::set_external_compute_mint_handler(ctx)
     }
 
     /// Sends a message to an AI NFT
