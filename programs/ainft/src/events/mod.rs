@@ -94,3 +94,11 @@ pub struct ComputeUnstaked {
     pub staked_amount: u64,
     pub exchange_rate: f64,
 }
+
+#[event]
+pub struct NFTPreminted {
+    pub collection: Pubkey,
+    pub nft_mint: Pubkey,
+    pub authority: Pubkey,
+    pub price: u64,
+}

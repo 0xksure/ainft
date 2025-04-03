@@ -325,6 +325,11 @@ pub struct AiCharacterNFT {
     pub compute_token_account: Pubkey,
     pub execution_client: Pubkey, // 32 bytes
     pub bump: [u8; 1],            // 1 byte
+    // New fields for preminted NFTs
+    pub is_preminted: bool,        // Flag to indicate if this is a preminted NFT
+    pub mint_price: u64,           // Price to mint this NFT
+    pub collection: Pubkey,        // The collection this NFT belongs to
+    pub is_minted: bool,           // Whether this NFT has been minted by a user
 }
 
 impl AiCharacterNFT {
@@ -355,9 +360,14 @@ impl AiCharacterNFT {
             message_count: 0,
             total_processed: 0,
             execution_client: *execution_client,
-            compute_token_account: compute_token_account.unwrap(),
+            compute_token_account: compute_token_account.unwrap_or_default(),
             character_config: CharacterConfig::default(),
             bump: [bump; 1],
+            // Initialize new fields
+            is_preminted: false,
+            mint_price: 0,
+            collection: Pubkey::default(),
+            is_minted: false,
         }
     }
 
@@ -402,6 +412,23 @@ impl AiCharacterNFT {
 
     pub fn update_execution_client(&mut self, execution_client: Pubkey) {
         self.execution_client = execution_client;
+    }
+    
+    // New methods for preminted NFTs
+    pub fn set_preminted(&mut self, is_preminted: bool) {
+        self.is_preminted = is_preminted;
+    }
+    
+    pub fn set_mint_price(&mut self, price: u64) {
+        self.mint_price = price;
+    }
+    
+    pub fn set_collection(&mut self, collection: Pubkey) {
+        self.collection = collection;
+    }
+    
+    pub fn set_minted(&mut self, is_minted: bool) {
+        self.is_minted = is_minted;
     }
 
     pub fn update_config_name(&mut self, name: String) -> Result<()> {

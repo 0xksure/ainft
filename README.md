@@ -97,8 +97,8 @@ pay for off chain compute.
 9. Transfer aiNFT. Allow the holder of the aiNFT to transfer it to another account. 
 
 # TODO
-[x] Allow user to attach compute to aiNFT
-[ ] Use on-chain config to build the prompt  
-[ ] Implement support for mongodb for storing data to build prompt 
-[ ] Allow AI to generate actively make choices
-[ ] Make on chain actions from execution client
+- [x] Allow user to attach compute to aiNFT
+- [ ] developer can create collection and premint NFTs
+- [ ] User can mint randomly or pick an NFT
+- [ ] All NFTs in collections can use the same execution client
+- [ ] All NFTs use the same compute mint 

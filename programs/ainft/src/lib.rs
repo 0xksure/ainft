@@ -46,13 +46,51 @@ pub mod ainft {
     /// * `name` - Name of the AI NFT
     /// * `uri` - URI pointing to the NFT's metadata
     /// * `character_config` - JSON configuration defining the AI's personality and behavior
-    pub fn mint_ainft(ctx: Context<MintAiNft>, name: String, uri: String) -> Result<()> {
-        instructions::mint_ainft_handler(ctx, name, uri)
+    pub fn mint_ainft(
+        ctx: Context<MintAiNft>,
+        name: String,
+        uri: String,
+        collection_owner: Pubkey,
+        collection_name: String,
+    ) -> Result<()> {
+        instructions::mint_ainft_handler(ctx, name, uri, collection_owner, collection_name)
     }
 
-    /// Creates a compute mint for an AI NFT
-    pub fn create_compute_mint(ctx: Context<CreateComputeMint>) -> Result<()> {
-        instructions::create_compute_mint_handler(ctx)
+    /// Mints a new AI NFT from an existing Metaplex collection
+    ///
+    /// Creates a new AI NFT with specified character configuration and metadata.
+    /// Requires payment of the collection's mint price.
+    ///
+    /// # Arguments
+    /// * `name` - Name of the AI NFT
+    /// * `uri` - URI pointing to the NFT's metadata
+    /// * `character_config` - JSON configuration defining the AI's personality and behavior
+    pub fn mint_ainft_from_collection(
+        ctx: Context<MintAiNftFromCollection>,
+        name: String,
+        uri: String,
+    ) -> Result<()> {
+        instructions::mint_ainft_from_collection_handler(ctx, name, uri)
+    }
+
+    /// Creates a preminted NFT owned by the collection
+    ///
+    /// This allows collection creators to pre-mint NFTs that can later be purchased by users.
+    /// Only the collection creator can create preminted NFTs for their collection.
+    ///
+    /// # Arguments
+    /// * `name` - Name of the AI NFT
+    /// * `uri` - URI pointing to the NFT's metadata
+    /// * `collection_name` - Name of the collection this NFT belongs to
+    /// * `price` - Price in lamports that users will pay to mint this NFT
+    pub fn create_preminted_nft(
+        ctx: Context<CreatePremintedNft>,
+        name: String,
+        uri: String,
+        collection_name: String,
+        price: u64,
+    ) -> Result<()> {
+        instructions::create_preminted_nft_handler(ctx, name, uri, collection_name, price)
     }
 
     /// Sets an externally created token as the compute mint for an AI NFT

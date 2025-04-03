@@ -13,10 +13,7 @@ pub struct AiNft {
     pub master_metadata: Pubkey,          // Collection this NFT belongs to
     pub master_mint: Pubkey,              // NFT mint
     pub compute_mint: Pubkey,             // Compute token mint
-    pub default_execution_client: Pubkey, // Default execution client
-    pub mint_count: u64,                  // Number of NFTs minted
-    pub mint_price: u64,                  // Price in lamports
-    pub max_supply: u64,                  // Maximum number of mints (0 for unlimited)
+    pub default_execution_client: Pubkey, // Default execution client                  // Maximum number of mints (0 for unlimited)
     pub bump: [u8; 1],
 }
 
@@ -39,9 +36,6 @@ impl AiNft {
             master_mint,
             compute_mint: Pubkey::default(),
             default_execution_client: params.default_execution_client,
-            mint_count: 0,
-            mint_price: params.mint_price,
-            max_supply: params.max_supply,
             bump: [bump],
         })
     }

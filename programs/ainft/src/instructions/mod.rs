@@ -1,8 +1,10 @@
 pub mod create_ai_character_compute_account;
 pub mod create_app_ainft;
-pub mod create_compute_mint;
+pub mod create_collection;
+pub mod create_preminted_nft;
 pub mod create_stake_account;
 pub mod mint_ainft;
+pub mod purchase_preminted_nft;
 pub mod register_execution_client;
 pub mod send_message;
 pub mod set_external_compute_mint;
@@ -16,9 +18,11 @@ pub mod write_response;
 
 pub use create_ai_character_compute_account::*;
 pub use create_app_ainft::*;
-pub use create_compute_mint::*;
+pub use create_collection::*;
+pub use create_preminted_nft::*;
 pub use create_stake_account::*;
 pub use mint_ainft::*;
+pub use purchase_preminted_nft::*;
 pub use register_execution_client::*;
 pub use send_message::*;
 pub use set_external_compute_mint::*;
