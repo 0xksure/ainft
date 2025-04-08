@@ -2,6 +2,8 @@ use anchor_lang::error_code;
 
 #[error_code]
 pub enum AiNftError {
+    #[msg("Invalid field name")]
+    InvalidFieldName,
     #[msg("Invalid collection authority")]
     InvalidCollectionAuthority,
     #[msg("Compute mint already initialized")]
@@ -86,4 +88,6 @@ pub enum AiNftError {
     ComputeMintNotInitialized,
     InvalidTokenOwner,
     Overflow,
+    #[msg("Invalid character config")]
+    InvalidCharacterConfig,
 }

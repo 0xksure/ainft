@@ -24,6 +24,8 @@ pub struct CreateCollection<'info> {
     #[account(
         init,
         payer = authority,
+        seeds = ["collection_mint".as_bytes(), collection.key().as_ref()],
+        bump,
         mint::decimals = 0,
         mint::authority = collection,
         mint::freeze_authority = collection,

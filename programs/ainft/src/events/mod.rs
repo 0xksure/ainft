@@ -7,6 +7,11 @@ pub struct CollectionCreated {
 }
 
 #[event]
+pub struct AINFTAppInitialized {
+    pub authority: Pubkey,
+}
+
+#[event]
 pub struct AiNftMinted {
     pub ai_nft: Pubkey,
     pub collection: Pubkey,

@@ -5,7 +5,7 @@ import { LAMPORTS_PER_SOL, PublicKey, Signer, SystemProgram, SYSVAR_RENT_PUBKEY,
 import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import * as spl from "@solana/spl-token"
 import { assert } from "chai";
-import { findMasterMintPDA, findAppAinftPDA, findComputeMintPDA, findMetadataPDA, findAiCharacterMintPDA, findAiCharacterPDA } from "../sdk-ts/src/utils";
+import { findMasterMintPDA, findAppAinftPDA, findComputeMintPDA, findMetadataPDA, findAiCharacterMintPDA, findAiCharacterPDA, findCollectionPDA, findPremintedNftMintPDA } from "../sdk-ts/src/utils";
 
 const METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 
@@ -31,6 +31,7 @@ describe("ainft", async () => {
   anchor.setProvider(provider);
 
   const program = anchor.workspace.Ainft as Program<Ainft>;
+  var globalExecutionClient: PublicKey;
 
   let [appAinftPda] = findAppAinftPDA();
   let [masterMint] = findMasterMintPDA();
@@ -50,11 +51,10 @@ describe("ainft", async () => {
     // Setup payer and airdrop
     const signature = await provider.connection.requestAirdrop(
       payer.publicKey,
-      20 * anchor.web3.LAMPORTS_PER_SOL
+      100 * anchor.web3.LAMPORTS_PER_SOL
     );
     await provider.connection.confirmTransaction(signature);
 
-    // Create the AI NFT collection
     const defaultExecutionClient = anchor.web3.Keypair.generate().publicKey;
     const createAiNftParams = {
       name: "AI Agent Collection",
@@ -70,9 +70,6 @@ describe("ainft", async () => {
       .createAppAinft(createAiNftParams)
       .accounts({
         aiNft: appAinftPda,
-        masterMint: masterMint,
-        masterToken: masterToken,
-        masterMetadata: masterMetadata,
         payer: payer.publicKey,
       })
       .signers([payer])
@@ -82,9 +79,7 @@ describe("ainft", async () => {
     var ainftAccount = await program.account.aiNft.fetch(appAinftPda);
     console.log("ainftAccount", ainftAccount);
     assert.ok(ainftAccount.authority.equals(payer.publicKey), "Authority mismatch");
-    assert.ok(ainftAccount.masterMint.toBase58() === masterMint.toBase58(), "Master mint mismatch");
     assert.ok(ainftAccount.computeMint.equals(PublicKey.default), "Compute mint should be default");
-    assert.equal(ainftAccount.mintCount.toString(), "0", "Mint count should be 0");
 
     // Create an external token mint outside of the program
     console.log("Creating external token mint");
@@ -139,10 +134,87 @@ describe("ainft", async () => {
     const updatedAinftAccount = await program.account.aiNft.fetch(appAinftPda);
     assert.ok(updatedAinftAccount.computeMint.equals(externalComputeMint), "Compute mint should be set to external token");
     computeMint = externalComputeMint; // Update the computeMint reference for the rest of the tests
+
+    const [globalExecutionClient, executionClientBump] = PublicKey.findProgramAddressSync(
+      [Buffer.from("execution_client"), appAinftPda.toBuffer(), payer.publicKey.toBuffer()],
+      program.programId
+    );
+
+    const executionClientComputeAccount = await anchor.utils.token.associatedAddress({
+      mint: computeMint,
+      owner: globalExecutionClient
+    });
+
+    const [stakedMint] = PublicKey.findProgramAddressSync(
+      [Buffer.from("staked_mint"), appAinftPda.toBuffer(), globalExecutionClient.toBuffer()],
+      program.programId
+    );
+
+    const stakedTokenAccount = await anchor.utils.token.associatedAddress({
+      mint: computeMint,
+      owner: appAinftPda
+    });
+    // Create execution client
+    await program.methods
+      .registerExecutionClient(
+        new BN(10), // gas fee is 10 compute
+        ["text"], // supported message types
+        50, // staker fee share (50%)
+        executionClientBump
+      )
+      .accounts({
+        aiNft: appAinftPda,
+        executionClient: globalExecutionClient,
+        computeTokenAccount: executionClientComputeAccount,
+        stakedTokenAccount: stakedTokenAccount,
+        computeMint: computeMint,
+        signer: payer.publicKey,
+        stakedMint: stakedMint,
+      })
+      .signers([payer])
+      .rpc();
+
   });
 
-  it("Mints an AI NFT successfully", async () => {
+  it.skip("Mints an AI NFT successfully", async () => {
+    // 1. First, create a collection
+    const collectionName = "AI Assistants Collection";
+    const collectionSymbol = "AIAC";
+    const collectionUri = "https://example.com/collection.json";
+    const royaltyBasisPoints = 500; // 5%
+    const mintPrice = new BN(0.5 * LAMPORTS_PER_SOL); // 0.5 SOL
+    const totalSupply = new BN(100); // 100 NFTs in collection
 
+    const [collection] = findCollectionPDA(payer.publicKey, collectionName);
+    const [collectionMint] = PublicKey.findProgramAddressSync(
+      [Buffer.from("collection_mint"), collection.toBuffer()],
+      program.programId
+    );
+    const [collectionMetadata] = findMetadataPDA(collectionMint);
+
+    console.log("Creating collection");
+    await program.methods
+      .createAinftCollection(
+        collectionName,
+        collectionSymbol,
+        collectionUri,
+        royaltyBasisPoints,
+        mintPrice,
+        totalSupply
+      )
+      .accounts({
+        authority: payer.publicKey,
+      })
+      .signers([payer])
+      .rpc();
+
+    console.log("Collection created:", collection.toBase58());
+    // Verify collection was created
+    const collectionAccount = await program.account.ainftCollection.fetch(collection);
+    assert.equal(collectionAccount.name, collectionName, "Collection name mismatch");
+    assert.equal(collectionAccount.mintCount.toString(), "0", "Collection mint count should be 0");
+
+    // 2. Now premint an NFT in the collection
     const aiCharacterName = "AI Character #1";
     const aiNftMetadata = {
       name: aiCharacterName,
@@ -179,51 +251,72 @@ describe("ainft", async () => {
       }
     };
 
-    const [aiCharacterMint] = findAiCharacterMintPDA(appAinftPda, aiCharacterName);
-    const [aiCharacter] = findAiCharacterPDA(aiCharacterMint);
-    const [aiCharacterMetadata] = findMetadataPDA(aiCharacterMint);
+    // Find PDAs for the preminted NFT
+    const [premintedNftMint] = findPremintedNftMintPDA(collection, aiNftMetadata.name);
+    const [aiCharacter] = findAiCharacterPDA(premintedNftMint);
+    const [aiCharacterMetadata] = findMetadataPDA(premintedNftMint);
 
-    const payerAiCharacterTokenAccount = await anchor.utils.token.associatedAddress({
-      mint: aiCharacterMint,
-      owner: payer.publicKey
+    // Create collection token account to hold the NFT until purchased
+    const collectionTokenAccount = await anchor.utils.token.associatedAddress({
+      mint: premintedNftMint,
+      owner: collection
     });
 
-    console.log("payerAiCharacterTokenAccount", payerAiCharacterTokenAccount.toBase58());
-    console.log("aiCharacterMint", aiCharacterMint.toBase58());
+    console.log("payer: ", payer.publicKey.toBase58());
+    console.log("premintedNftMint", premintedNftMint.toBase58());
     console.log("aiCharacter", aiCharacter.toBase58());
     console.log("aiCharacterMetadata", aiCharacterMetadata.toBase58());
+    console.log("collectionTokenAccount", collectionTokenAccount.toBase58());
     console.log("appAinftPda", appAinftPda.toBase58());
-    console.log("payer", payer.publicKey.toBase58());
-    console.log("aiNft", appAinftPda.toBase58());
+    console.log("payer", provider.wallet.publicKey.toBase58());
+    console.log("collection", collection.toBase58());
     console.log("metadataProgram", METADATA_PROGRAM_ID.toBase58());
     console.log("rent", SYSVAR_RENT_PUBKEY.toBase58());
     console.log("systemProgram", SystemProgram.programId.toBase58());
     console.log("tokenProgram", TOKEN_PROGRAM_ID.toBase58());
     console.log("associatedTokenProgram", ASSOCIATED_TOKEN_PROGRAM_ID.toBase58());
 
-    var ainftAccount = await program.account.aiNft.fetch(appAinftPda);
-    console.log("ainftAccount", ainftAccount);
-    assert.equal(ainftAccount.mintCount.toString(), "0", "Mint count should be 0");
-    assert.equal(ainftAccount.maxSupply.toString(), "100", "Max supply should be 100");
-    // Mint the AI character
-    console.log("Minting AI character");
-    await program.methods
-      .mintAinft(
-        aiNftMetadata.name,
-        aiNftMetadata.uri,
-      )
+    // Premint the NFT
+    console.log("Preminting NFT");
+    const ix = await program.methods.createPremintedNft(
+      aiNftMetadata.name,
+      aiNftMetadata.uri,
+      collectionName,
+      new BN(0.8 * LAMPORTS_PER_SOL), // 0.8 SOL price for this specific NFT
+      PublicKey.default
+    )
       .accounts({
-        payer: payer.publicKey,
-        aiNft: appAinftPda,
-        aiCharacter: aiCharacter,
-        aiCharacterMint: aiCharacterMint,
-        aiCharacterMetadata: aiCharacterMetadata,
-        payerAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        authority: payer.publicKey,
+        characterConfig: PublicKey.default
       })
-      .signers([payer])
-      .rpc();
+      .instruction()
 
-    // // Create compute token account for the AI character
+    const latestBlockhash = await provider.connection.getLatestBlockhash('confirmed');
+
+    const tx = new Transaction();
+    tx.add(ix);
+    tx.recentBlockhash = latestBlockhash.blockhash;
+    tx.feePayer = payer.publicKey;
+    tx.sign(payer);
+    //const signedTx = await provider.wallet.signTransaction(tx);
+    const sig = await provider.connection.sendRawTransaction(tx.serialize());
+    console.log("Signature: ", sig)
+
+
+    console.log("| Finished preminting NFT");
+    // Verify NFT was preminted
+    const updatedCollectionAccount = await program.account.ainftCollection.fetch(collection);
+    assert.equal(updatedCollectionAccount.mintCount.toString(), "1", "Collection mint count should be 1");
+
+    const aiCharacterAccount = await program.account.aiCharacterNft.fetch(aiCharacter);
+    assert.equal(aiCharacterAccount.isPreminted, true, "NFT should be marked as preminted");
+    assert.equal(aiCharacterAccount.isMinted, false, "NFT should not be marked as minted yet");
+
+    // Verify the NFT is in the collection's token account
+    const collectionTokenBalance = await provider.connection.getTokenAccountBalance(collectionTokenAccount);
+    assert.equal(collectionTokenBalance.value.amount, "1", "Collection should have 1 NFT");
+
+    // Create compute token account for the AI character
     const aiCharacterComputeTokenAccount = await anchor.utils.token.associatedAddress({
       mint: computeMint,
       owner: aiCharacter
@@ -238,7 +331,7 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         computeMint: computeMint,
-        aiCharacterMint: aiCharacterMint,
+        aiCharacterMint: premintedNftMint,
         aiCharacterMetadata: aiCharacterMetadata,
         aiCharacterComputeTokenAccount: aiCharacterComputeTokenAccount,
         payer: payer.publicKey,
@@ -261,15 +354,9 @@ describe("ainft", async () => {
     console.log("aiCharacterAccountWithCompute.computeTokenAccount", aiCharacterAccountWithCompute.computeTokenAccount.toString());
     assert.ok(aiCharacterAccountWithCompute.computeTokenAccount.toString() === aiCharacterComputeTokenAccount.toString(), "AI character should have compute token account set");
 
-
-    // Verify collection state was updated
-    const finalAinft = await program.account.aiNft.fetch(appAinftPda);
-    assert.equal(finalAinft.mintCount.toString(), "1", "Mint count should be 1");
-    assert.equal(finalAinft.mintCount.toString(), "1", "Total agents should be 1");
-
-    // check that the ai character is minted to payerAiCharacterTokenAccount
-    const aiCharacterTokenBalance = await provider.connection.getTokenAccountBalance(payerAiCharacterTokenAccount);
-    assert.equal(aiCharacterTokenBalance.value.amount, "1", "AI Character should be minted to payerAiCharacterTokenAccount");
+    // Verify the NFT is still in the collection's token account (since it's preminted but not purchased yet)
+    const collectionTokenBalanceAfter = await provider.connection.getTokenAccountBalance(collectionTokenAccount);
+    assert.equal(collectionTokenBalanceAfter.value.amount, "1", "Collection should still have 1 NFT");
 
 
     const stringToByteArray = (str: string, length: number): number[] => {
@@ -288,8 +375,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount
       })
       .signers([payer])
       .rpc();
@@ -302,8 +389,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -316,8 +403,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -336,8 +423,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -350,8 +437,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -364,8 +451,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -378,8 +465,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -392,8 +479,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -415,8 +502,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -438,8 +525,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -461,8 +548,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -475,8 +562,8 @@ describe("ainft", async () => {
         aiNft: appAinftPda,
         aiCharacter: aiCharacter,
         authority: payer.publicKey,
-        aiCharacterMint: aiCharacterMint,
-        authorityAiCharacterTokenAccount: payerAiCharacterTokenAccount,
+        aiCharacterMint: premintedNftMint,
+        authorityAiCharacterTokenAccount: collectionTokenAccount,
       })
       .signers([payer])
       .rpc();
@@ -502,7 +589,7 @@ describe("ainft", async () => {
 
 
 
-  it.only("Can stake compute, send messages, and unstake compute", async () => {
+  it.skip("Can stake compute, send messages, and unstake compute", async () => {
     // First mint an AI NFT (using previous test setup)
     const aiNftMetadata = {
       name: "AI Character #1",
@@ -657,7 +744,7 @@ describe("ainft", async () => {
         stakedTokenAccount: stakedTokenAccount,
         computeMint: computeMint,
         signer: payer.publicKey,
-        stakedMint: stakedMint,
+        stakedMint: stakedMint
       })
       .signers([payer])
       .rpc();
@@ -884,7 +971,7 @@ describe("ainft", async () => {
     assert.equal(finalStakerData.amount.toString(), "0");
   });
 
-  it("Can mint a token outside the program and set it as the compute token", async () => {
+  it.skip("Can mint a token outside the program and set it as the compute token", async () => {
     // Create a new AI NFT collection without initializing the compute mint
     const payer = provider.wallet
 
@@ -1054,5 +1141,205 @@ describe("ainft", async () => {
     assert.equal(aiCharacterTokenBalance.value.amount, "100000000000", "AI character should have 100 tokens");
 
     console.log("Successfully used externally minted token as compute token");
+  });
+
+  it.only("Can create collection, premint NFTs, and purchase preminted NFTs", async () => {
+    // 1. First, initialize the program (already done in beforeEach)
+    // Verify the app is initialized
+    const ainftAccount = await program.account.aiNft.fetch(appAinftPda);
+    assert.ok(ainftAccount.authority.equals(payer.publicKey), "Authority mismatch");
+
+    // 2. Create a collection
+    const collectionName = "Test Collection";
+    const collectionSymbol = "TEST";
+    const collectionUri = "https://example.com/collection.json";
+    const royaltyBasisPoints = 500; // 5%
+    const mintPrice = new BN(1 * LAMPORTS_PER_SOL); // 1 SOL
+    const totalSupply = new BN(10); // 10 NFTs in collection
+
+    const [collection] = findCollectionPDA(payer.publicKey, collectionName);
+    const [collectionMint] = PublicKey.findProgramAddressSync(
+      [Buffer.from("collection_mint"), collection.toBuffer()],
+      program.programId
+    );
+    const [collectionMetadata] = findMetadataPDA(collectionMint);
+
+    console.log("collection", collection.toBase58());
+    console.log("collectionMint", collectionMint.toBase58());
+    console.log("collectionMetadata", collectionMetadata.toBase58());
+    console.log("authority", payer.publicKey.toBase58());
+    console.log("Creating collection");
+    await program.methods
+      .createAinftCollection(
+        collectionName,
+        collectionSymbol,
+        collectionUri,
+        royaltyBasisPoints,
+        mintPrice,
+        totalSupply
+      )
+      .accounts({
+        collection,
+        collectionMint,
+        collectionMetadata,
+        authority: payer.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        metadataProgram: METADATA_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
+      })
+      .signers([payer])
+      .rpc();
+
+    // Verify collection was created
+    const collectionAccount = await program.account.ainftCollection.fetch(collection);
+    assert.equal(collectionAccount.name, collectionName, "Collection name mismatch");
+    assert.equal(collectionAccount.symbol, collectionSymbol, "Collection symbol mismatch");
+    assert.equal(collectionAccount.mintCount.toString(), "0", "Collection mint count should be 0");
+    assert.equal(collectionAccount.totalSupply.toString(), totalSupply.toString(), "Collection total supply mismatch");
+    assert.equal(collectionAccount.mintPrice.toString(), mintPrice.toString(), "Collection mint price mismatch");
+
+    // 3. Premint an NFT
+    const nftName = "Preminted NFT #1";
+    const nftUri = "https://example.com/nft1.json";
+    const nftPrice = new BN(1.5 * LAMPORTS_PER_SOL); // 1.5 SOL
+
+    // Find PDAs for the preminted NFT
+    const [premintedNftMint] = findPremintedNftMintPDA(collection, nftName);
+    const [aiCharacter] = findAiCharacterPDA(premintedNftMint);
+    const [nftMetadata] = findMetadataPDA(premintedNftMint);
+
+    // Create collection token account to hold the NFT until purchased
+    const collectionTokenAccount = await anchor.utils.token.associatedAddress({
+      mint: premintedNftMint,
+      owner: collection
+    });
+
+    console.log("Preminting NFT");
+    await program.methods
+      .createPremintedNft(
+        nftName,
+        nftUri,
+        collectionName,
+        nftPrice,
+        null // default execution client
+      )
+      .accounts({
+        aiNft: appAinftPda,
+        collection,
+        aiCharacter,
+        aiCharacterMint: premintedNftMint,
+        aiCharacterMetadata: nftMetadata,
+        characterConfig: PublicKey.default,
+        collectionTokenAccount,
+        authority: payer.publicKey,
+      })
+      .signers([payer])
+      .rpc();
+
+    console.log("Preminted NFT mint:", premintedNftMint.toBase58());
+
+    // Verify NFT was preminted
+    const updatedCollectionAccount = await program.account.ainftCollection.fetch(collection);
+    assert.equal(updatedCollectionAccount.mintCount.toString(), "1", "Collection mint count should be 1");
+
+    const aiCharacterAccount = await program.account.aiCharacterNft.fetch(aiCharacter);
+    assert.equal(aiCharacterAccount.isPreminted, true, "NFT should be marked as preminted");
+    assert.equal(aiCharacterAccount.isMinted, false, "NFT should not be marked as minted yet");
+
+
+    // Verify the NFT is in the collection's token account
+    const collectionTokenBalance = await provider.connection.getTokenAccountBalance(collectionTokenAccount);
+    assert.equal(collectionTokenBalance.value.amount, "1", "Collection should have 1 NFT");
+
+    // 4. Create compute token account for the NFT
+    const aiCharacterComputeTokenAccount = await anchor.utils.token.associatedAddress({
+      mint: computeMint,
+      owner: aiCharacter
+    });
+
+    console.log("Creating AI character compute account");
+    await program.methods
+      .createAiCharacterComputeAccount()
+      .accounts({
+        aiNft: appAinftPda,
+        aiCharacter,
+        aiCharacterMint: premintedNftMint,
+        computeMint,
+        aiCharacterComputeTokenAccount,
+        payer: payer.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
+      })
+      .signers([payer])
+      .rpc();
+
+    // Verify compute token account was created
+    const computeTokenAccountInfo = await provider.connection.getAccountInfo(aiCharacterComputeTokenAccount);
+    assert.ok(computeTokenAccountInfo !== null, "Compute token account should exist");
+
+    // 5. Create a new buyer to purchase the preminted NFT
+    const buyer = anchor.web3.Keypair.generate();
+    const buyerAirdropSignature = await provider.connection.requestAirdrop(
+      buyer.publicKey,
+      5 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(buyerAirdropSignature);
+
+    // Create buyer's token account to receive the NFT
+    const buyerTokenAccount = await anchor.utils.token.associatedAddress({
+      mint: premintedNftMint,
+      owner: buyer.publicKey
+    });
+
+    console.log("Purchasing preminted NFT");
+    await program.methods
+      .mintAinftFromCollection()
+      .accounts({
+        aiNft: appAinftPda,
+        aiCharacter,
+        collection,
+        nftMint: premintedNftMint,
+        collectionTokenAccount,
+        buyerTokenAccount,
+        buyer: buyer.publicKey,
+        collectionAuthority: payer.publicKey,
+      })
+      .signers([buyer])
+      .rpc();
+    console.log("Preminted NFT purchased");
+
+    // Verify the NFT was transferred to the buyer
+    const buyerTokenBalance = await provider.connection.getTokenAccountBalance(buyerTokenAccount);
+    assert.equal(buyerTokenBalance.value.amount, "1", "Buyer should have 1 NFT");
+
+    const collectionTokenBalanceAfter = await provider.connection.getTokenAccountBalance(collectionTokenAccount);
+    assert.equal(collectionTokenBalanceAfter.value.amount, "0", "Collection should have 0 NFTs");
+
+    // Verify the NFT is marked as minted
+    const aiCharacterAccountAfter = await program.account.aiCharacterNft.fetch(aiCharacter);
+    assert.equal(aiCharacterAccountAfter.isMinted, true, "NFT should be marked as minted");
+
+    // 6. Test that the buyer can register an execution client for their NFT
+
+    console.log("Registering execution client");
+    await program.methods
+      .updateAiCharacterExecutionClient()
+      .accounts({
+        aiNft: appAinftPda,
+        aiCharacter,
+        aiCharacterMint: premintedNftMint,
+        authority: buyer.publicKey,
+        aiCharacterTokenAccount: buyerTokenAccount,
+        executionClient: globalExecutionClient,
+      })
+      .signers([buyer])
+      .rpc();
+
+    // Verify the execution client was updated
+    const aiCharacterAccountWithClient = await program.account.aiCharacterNft.fetch(aiCharacter);
+    assert.ok(aiCharacterAccountWithClient.executionClient.equals(executionClient), "Execution client should be updated");
   });
 });

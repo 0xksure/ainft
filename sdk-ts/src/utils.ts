@@ -174,3 +174,31 @@ export function findAiCharacterComputeTokenAccount(
         owner: aiCharacter
     });
 }
+
+export function findCollectionPDA(
+    authority: PublicKey,
+    name: string
+): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+        [
+            Buffer.from("collection"),
+            authority.toBuffer(),
+            Buffer.from(name),
+        ],
+        PROGRAM_ID
+    );
+}
+
+export function findPremintedNftMintPDA(
+    collection: PublicKey,
+    name: string
+): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+        [
+            Buffer.from("premint"),
+            collection.toBuffer(),
+            Buffer.from(name),
+        ],
+        PROGRAM_ID
+    );
+}

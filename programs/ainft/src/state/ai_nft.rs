@@ -9,33 +9,21 @@ use super::CreateAiNftParams;
 #[account]
 pub struct AiNft {
     // Base
-    pub authority: Pubkey,                // NFT owner
-    pub master_metadata: Pubkey,          // Collection this NFT belongs to
-    pub master_mint: Pubkey,              // NFT mint
-    pub compute_mint: Pubkey,             // Compute token mint
-    pub default_execution_client: Pubkey, // Default execution client                  // Maximum number of mints (0 for unlimited)
+    pub authority: Pubkey,    // NFT owner
+    pub compute_mint: Pubkey, // Compute token mint
     pub bump: [u8; 1],
 }
 
 impl AiNft {
-    pub const LEN: usize = 8 + 32 + 32 + 32 + 32 + 32 + 32 + 1 + 8 + 8 + 16 + 8 + 1;
+    pub const LEN: usize = 8 + 32 + 32 + 1;
     pub fn as_seeds(&self) -> [&[u8]; 2] {
         ["app_ainft".as_bytes(), &self.bump]
     }
 
-    pub fn try_new(
-        bump: u8,
-        publisher: Pubkey,
-        master_metadata: Pubkey,
-        master_mint: Pubkey,
-        params: &CreateAiNftParams,
-    ) -> Result<Self> {
+    pub fn try_new(bump: u8, publisher: Pubkey, params: &CreateAiNftParams) -> Result<Self> {
         Ok(Self {
             authority: publisher,
-            master_metadata,
-            master_mint,
-            compute_mint: Pubkey::default(),
-            default_execution_client: params.default_execution_client,
+            compute_mint: params.compute_mint,
             bump: [bump],
         })
     }

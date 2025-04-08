@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::metadata::{Metadata, MetadataAccount};
 mod actions;
 mod error;
 mod events;
@@ -37,40 +36,26 @@ pub mod ainft {
         instructions::create_app_ainft_handler(ctx, create_ai_nft_params)
     }
 
-    /// Mints a new AI NFT
+    /// Create colletion
     ///
-    /// Creates a new AI NFT with specified character configuration and metadata.
-    /// Requires payment of the collection's mint price.
-    ///
-    /// # Arguments
-    /// * `name` - Name of the AI NFT
-    /// * `uri` - URI pointing to the NFT's metadata
-    /// * `character_config` - JSON configuration defining the AI's personality and behavior
-    pub fn mint_ainft(
-        ctx: Context<MintAiNft>,
+    pub fn create_ainft_collection(
+        ctx: Context<CreateCollection>,
         name: String,
+        symbol: String,
         uri: String,
-        collection_owner: Pubkey,
-        collection_name: String,
+        royalty_basis_points: u16,
+        mint_price: u64,
+        total_supply: u64,
     ) -> Result<()> {
-        instructions::mint_ainft_handler(ctx, name, uri, collection_owner, collection_name)
-    }
-
-    /// Mints a new AI NFT from an existing Metaplex collection
-    ///
-    /// Creates a new AI NFT with specified character configuration and metadata.
-    /// Requires payment of the collection's mint price.
-    ///
-    /// # Arguments
-    /// * `name` - Name of the AI NFT
-    /// * `uri` - URI pointing to the NFT's metadata
-    /// * `character_config` - JSON configuration defining the AI's personality and behavior
-    pub fn mint_ainft_from_collection(
-        ctx: Context<MintAiNftFromCollection>,
-        name: String,
-        uri: String,
-    ) -> Result<()> {
-        instructions::mint_ainft_from_collection_handler(ctx, name, uri)
+        instructions::create_collection_handler(
+            ctx,
+            name,
+            symbol,
+            uri,
+            royalty_basis_points,
+            mint_price,
+            total_supply,
+        )
     }
 
     /// Creates a preminted NFT owned by the collection
@@ -89,8 +74,50 @@ pub mod ainft {
         uri: String,
         collection_name: String,
         price: u64,
+        default_execution_client: Option<Pubkey>,
     ) -> Result<()> {
-        instructions::create_preminted_nft_handler(ctx, name, uri, collection_name, price)
+        instructions::create_preminted_nft_handler(
+            ctx,
+            name,
+            uri,
+            collection_name,
+            price,
+            default_execution_client,
+        )
+    }
+
+    /// Creates a compute token account for an AI character
+    pub fn create_ai_character_compute_account(
+        ctx: Context<CreateAiCharacterComputeAccount>,
+    ) -> Result<()> {
+        instructions::create_ai_character_compute_account_handler(ctx)
+    }
+
+    /// Creates a character configuration account
+    ///
+    /// This allows users to create a character configuration that can be used
+    /// when minting or preminting NFTs.
+    ///
+    /// # Arguments
+    /// * `config_input` - The character configuration input
+    pub fn create_character_config(
+        ctx: Context<CreateCharacterConfig>,
+        config_input: CharacterConfigInput,
+    ) -> Result<()> {
+        instructions::create_character_config_handler(ctx, config_input)
+    }
+
+    /// Mints a new AI NFT from an existing Metaplex collection
+    ///
+    /// Creates a new AI NFT with specified character configuration and metadata.
+    /// Requires payment of the collection's mint price.
+    ///
+    /// # Arguments
+    /// * `name` - Name of the AI NFT
+    /// * `uri` - URI pointing to the NFT's metadata
+    /// * `character_config` - JSON configuration defining the AI's personality and behavior
+    pub fn mint_ainft_from_collection(ctx: Context<PurchasePremintedNft>) -> Result<()> {
+        instructions::purchase_preminted_nft_handler(ctx)
     }
 
     /// Sets an externally created token as the compute mint for an AI NFT
@@ -191,11 +218,12 @@ pub mod ainft {
         instructions::update_ai_character_execution_client_handler(ctx)
     }
 
-    /// Creates a compute token account for an AI character
-    pub fn create_ai_character_compute_account(
-        ctx: Context<CreateAiCharacterComputeAccount>,
-    ) -> Result<()> {
-        instructions::create_ai_character_compute_account_handler(ctx)
+    /// Updates the character config associated with an AI character NFT
+    ///
+    /// This allows NFT owners to change which character configuration is associated with their NFT.
+    /// The owner must own both the NFT and the character configuration.
+    pub fn update_ai_character_config(ctx: Context<UpdateAiCharacterConfig>) -> Result<()> {
+        instructions::update_ai_character_config_handler(ctx)
     }
 
     /// Updates an AI NFT's character name
@@ -281,7 +309,7 @@ pub mod ainft {
     /// Updates an AI NFT's style all configuration
     pub fn update_character_style_all(
         ctx: Context<UpdateCharacterConfigField>,
-        style_all: [[u8; 32]; 10],
+        style_all: [[u8; 32]; 5],
     ) -> Result<()> {
         instructions::update_character_style_all_handler(ctx, style_all)
     }
@@ -289,7 +317,7 @@ pub mod ainft {
     /// Updates an AI NFT's style chat configuration
     pub fn update_character_style_chat(
         ctx: Context<UpdateCharacterConfigField>,
-        style_chat: [[u8; 32]; 10],
+        style_chat: [[u8; 32]; 5],
     ) -> Result<()> {
         instructions::update_character_style_chat_handler(ctx, style_chat)
     }
@@ -297,7 +325,7 @@ pub mod ainft {
     /// Updates an AI NFT's style post configuration
     pub fn update_character_style_post(
         ctx: Context<UpdateCharacterConfigField>,
-        style_post: [[u8; 32]; 10],
+        style_post: [[u8; 32]; 5],
     ) -> Result<()> {
         instructions::update_character_style_post_handler(ctx, style_post)
     }

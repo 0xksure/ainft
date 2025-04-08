@@ -6,11 +6,18 @@ use anchor_spl::token::{self, Mint, MintTo, Token, TokenAccount};
 use std::mem::size_of;
 
 use crate::events::NFTPreminted;
-use crate::state::{AINFTCollection, AiCharacterNFT, AiNft};
+use crate::state::{AINFTCollection, AiCharacterNFT, AiNft, CharacterConfig};
 
 #[derive(Accounts)]
 #[instruction(name: String, uri: String, collection_name: String, price: u64)]
 pub struct CreatePremintedNft<'info> {
+    #[account(
+        mut,
+        seeds = ["app_ainft".as_bytes()],
+        bump,
+    )]
+    pub ai_nft: Box<Account<'info, AiNft>>,
+
     #[account(
         mut,
         seeds = ["collection".as_bytes(), authority.key().as_ref(), collection_name.as_bytes()],
@@ -19,13 +26,6 @@ pub struct CreatePremintedNft<'info> {
         constraint = collection.mint_count < collection.total_supply,
     )]
     pub collection: Account<'info, AINFTCollection>,
-
-    #[account(
-        mut,
-        seeds = ["app_ainft".as_bytes()],
-        bump,
-    )]
-    pub ai_nft: Box<Account<'info, AiNft>>,
 
     #[account(
         init,
@@ -43,8 +43,8 @@ pub struct CreatePremintedNft<'info> {
         seeds = ["premint".as_bytes(), collection.key().as_ref(), name.as_bytes()],
         bump,
         mint::decimals = 0,
-        mint::authority = ai_nft,
-        mint::freeze_authority = ai_nft,
+        mint::authority = collection,
+        mint::freeze_authority = collection,
     )]
     pub ai_character_mint: Box<Account<'info, Mint>>,
 
@@ -60,6 +60,10 @@ pub struct CreatePremintedNft<'info> {
         associated_token::authority = collection,
     )]
     pub collection_token_account: Box<Account<'info, TokenAccount>>,
+
+    // Optional character config account
+    #[account()]
+    pub character_config: Option<UncheckedAccount<'info>>,
 
     // The collection creator/authority
     #[account(mut)]
@@ -80,9 +84,9 @@ impl<'info> CreatePremintedNft<'info> {
         let accounts = CreateMetadataAccountsV3 {
             metadata: self.ai_character_metadata.to_account_info(),
             mint: self.ai_character_mint.to_account_info(),
-            mint_authority: self.ai_nft.to_account_info(),
+            mint_authority: self.collection.to_account_info(),
             payer: self.authority.to_account_info(),
-            update_authority: self.ai_nft.to_account_info(),
+            update_authority: self.collection.to_account_info(),
             system_program: self.system_program.to_account_info(),
             rent: self.rent.to_account_info(),
         };
@@ -94,7 +98,7 @@ impl<'info> CreatePremintedNft<'info> {
         let accounts = MintTo {
             mint: self.ai_character_mint.to_account_info(),
             to: self.collection_token_account.to_account_info(),
-            authority: self.ai_nft.to_account_info(),
+            authority: self.collection.to_account_info(),
         };
         CpiContext::new(program, accounts)
     }
@@ -106,20 +110,27 @@ pub fn create_preminted_nft_handler(
     uri: String,
     collection_name: String,
     price: u64,
+    default_execution_client: Option<Pubkey>,
 ) -> Result<()> {
     // Create metadata for the NFT
-    let seeds = ["app_ainft".as_bytes(), &[ctx.bumps.ai_nft]];
+    let seeds = [
+        "collection".as_bytes(),
+        ctx.accounts.collection.authority.as_ref(),
+        collection_name.as_bytes(),
+        &[ctx.bumps.collection],
+    ];
 
     // Create the metadata
+    msg!("Creating metadata");
     metadata::create_metadata_accounts_v3(
         ctx.accounts
             .create_metadata_accounts_ctx()
             .with_signer(&[&seeds]),
         DataV2 {
             name: name.clone(),
-            symbol: ctx.accounts.collection.symbol.clone(),
+            symbol: "cool".to_string(),
             uri: uri.clone(),
-            seller_fee_basis_points: ctx.accounts.collection.royalty_basis_points,
+            seller_fee_basis_points: 1000, // 10%
             creators: Some(vec![Creator {
                 address: ctx.accounts.collection.authority,
                 verified: false,
@@ -136,6 +147,7 @@ pub fn create_preminted_nft_handler(
         None,
     )?;
 
+    msg!("Minting NFT");
     // Mint the NFT to the collection's token account
     token::mint_to(ctx.accounts.mint_to_ctx().with_signer(&[&seeds]), 1)?;
 
@@ -145,19 +157,27 @@ pub fn create_preminted_nft_handler(
 
     // Store NFT data in the AiCharacterNFT account
     let mut ai_character = ctx.accounts.ai_character.load_init()?;
+
+    // Get the character config pubkey if provided
+    let character_config_pubkey = if let Some(character_config) = &ctx.accounts.character_config {
+        character_config.key()
+    } else {
+        Pubkey::default()
+    };
+
     *ai_character = AiCharacterNFT::try_new(
         &ctx.accounts.ai_nft.key(),
         &ctx.accounts.ai_character_mint.key(),
         &name,
-        &ctx.accounts.ai_nft.default_execution_client,
+        default_execution_client,
         Some(ctx.accounts.collection_token_account.key()),
+        &character_config_pubkey,
         ctx.bumps.ai_character,
     );
 
     // Set the preminted flag and price
-    ai_character.set_preminted(true);
-    ai_character.set_mint_price(price);
-    ai_character.set_collection(collection.key());
+    ai_character.is_preminted = true;
+    ai_character.is_minted = false;
 
     // Emit an event for the preminted NFT
     emit!(NFTPreminted {

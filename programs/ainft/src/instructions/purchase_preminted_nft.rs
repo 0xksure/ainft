@@ -6,7 +6,6 @@ use crate::events::AiNftMinted;
 use crate::state::{AINFTCollection, AiCharacterNFT, AiNft};
 
 #[derive(Accounts)]
-#[instruction(nft_mint: Pubkey)]
 pub struct PurchasePremintedNft<'info> {
     #[account(
         mut,
@@ -27,23 +26,17 @@ pub struct PurchasePremintedNft<'info> {
     )]
     pub ai_character: AccountLoader<'info, AiCharacterNFT>,
 
-    #[account(
-        mut,
-        constraint = collection.key() == ai_character.load()?.collection,
-    )]
-    pub collection: Account<'info, AINFTCollection>,
+    #[account(mut)]
+    pub collection: Box<Account<'info, AINFTCollection>>,
 
     // The NFT mint that was preminted
-    #[account(
-        mut,
-        address = nft_mint,
-    )]
+    #[account(mut)]
     pub nft_mint: Account<'info, anchor_spl::token::Mint>,
 
     // Collection's token account that currently holds the NFT
     #[account(
         mut,
-        associated_token::mint = nft_mint,
+        associated_token::mint = nft_mint.key(),
         associated_token::authority = collection,
     )]
     pub collection_token_account: Box<Account<'info, TokenAccount>>,
@@ -87,14 +80,11 @@ impl<'info> PurchasePremintedNft<'info> {
     }
 }
 
-pub fn purchase_preminted_nft_handler(
-    ctx: Context<PurchasePremintedNft>,
-    nft_mint: Pubkey,
-) -> Result<()> {
+pub fn purchase_preminted_nft_handler(ctx: Context<PurchasePremintedNft>) -> Result<()> {
     // Get the price of the NFT
     let price = {
-        let ai_character = ctx.accounts.ai_character.load()?;
-        ai_character.mint_price
+        let collection = &ctx.accounts.collection;
+        collection.mint_price
     };
 
     // Transfer SOL from buyer to collection authority
