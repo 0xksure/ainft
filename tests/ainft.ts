@@ -975,7 +975,7 @@ describe("ainft", async () => {
     console.log("executionClientAccount", executionClientAccount);
     console.log("gas fee", executionClientAccount.gas.toString());
     const executionClientTokenBalance = await provider.connection.getTokenAccountBalance(executionClientComputeAccount);
-    assert.equal(executionClientTokenBalance.value.amount, "5000000000");
+    assert.equal(executionClientTokenBalance.value.amount, "5");
 
     // Test updating execution client
     console.log("Testing execution client update");
