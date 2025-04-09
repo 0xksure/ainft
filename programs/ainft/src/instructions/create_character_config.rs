@@ -6,7 +6,7 @@ use crate::{
 };
 
 #[derive(Accounts)]
-#[instruction(config_input: CharacterConfigInput)]
+#[instruction(id: String, config_input: CharacterConfigInput)]
 pub struct CreateCharacterConfig<'info> {
     #[account(
         mut,
@@ -19,7 +19,7 @@ pub struct CreateCharacterConfig<'info> {
         init,
         payer = authority,
         space = 8 + std::mem::size_of::<CharacterConfig>(),
-        seeds = ["character_config".as_bytes(), authority.key().as_ref(), config_input.name.as_bytes()],
+        seeds = ["character_config".as_bytes(), authority.key().as_ref(), id.as_bytes()],
         bump,
     )]
     pub character_config: AccountLoader<'info, CharacterConfig>,
@@ -33,10 +33,11 @@ pub struct CreateCharacterConfig<'info> {
 
 pub fn create_character_config_handler(
     ctx: Context<CreateCharacterConfig>,
+    id: String,
     config_input: CharacterConfigInput,
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_init()?;
-    
+
     // Initialize the character config with the provided input
     *character_config = CharacterConfig::from_input(
         config_input,

@@ -19,32 +19,11 @@ pub struct UpdateAiCharacterExecutionClient<'info> {
     #[account(
         mut,
         // make sure the ai character is associated with the agent nft mint
-        constraint = ai_character.load().unwrap().character_nft_mint == ai_character_mint.key() @ AiNftError::InvalidAgentNftMint,
     )]
     pub ai_character: AccountLoader<'info, AiCharacterNFT>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
-
-    // the mint of the agent nft
-    #[account(
-        mut,
-        constraint = ai_character_mint.key() == ai_character.load().unwrap().character_nft_mint @ AiNftError::InvalidAgentNftMint,
-        constraint = ai_character_mint.mint_authority.is_some() && ai_character_mint.mint_authority.unwrap() == ai_nft.key() @ AiNftError::InvalidMintAuthority,
-    )]
-    pub ai_character_mint: Account<'info, Mint>,
-
-    // token account of the agent nft
-    #[account(
-        mut,
-        // mint of the token account should be the agent nft mint
-        constraint = ai_character_token_account.mint == ai_character_mint.key() @ AiNftError::InvalidAgentNftMint,
-        // owner of the token account should be the authority
-        constraint = ai_character_token_account.owner == authority.key() @ AiNftError::InvalidOwner,
-        constraint = ai_character_token_account.amount == 1 @ AiNftError::InvalidAgentNftTokenAccount,
-    
-    )]
-    pub ai_character_token_account: Account<'info, TokenAccount>,
 
     #[account(
         mut,

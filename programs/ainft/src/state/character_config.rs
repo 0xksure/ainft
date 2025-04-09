@@ -66,54 +66,38 @@ pub struct CharacterConfig {
 }
 
 impl CharacterConfig {
+    // Helper function to convert a string to a fixed-size byte array
+    pub fn string_to_fixed_bytes<const N: usize>(s: &str) -> [u8; N] {
+        let mut result = [0u8; N];
+        let bytes = s.as_bytes();
+        let len = bytes.len().min(N);
+        result[..len].copy_from_slice(&bytes[..len]);
+        result
+    }
+
+    // Helper function to convert a vector of strings to a fixed-size 2D byte array
+    pub fn strings_to_fixed_bytes<const N: usize, const M: usize>(
+        strings: &[String],
+    ) -> [[u8; N]; M] {
+        let mut result = [[0u8; N]; M];
+        for (i, s) in strings.iter().enumerate().take(M) {
+            result[i] = Self::string_to_fixed_bytes(s);
+        }
+        result
+    }
+
     pub fn from_input(input: CharacterConfigInput, authority: &Pubkey, bump: u8) -> Self {
         Self {
-            name: input.name.as_bytes().try_into().unwrap(),
-            clients: input
-                .clients
-                .iter()
-                .map(|c| c.as_bytes().try_into().unwrap())
-                .collect::<Vec<[u8; 20]>>()
-                .try_into()
-                .unwrap(),
-            model_provider: input.model_provider.as_bytes().try_into().unwrap(),
+            name: Self::string_to_fixed_bytes(&input.name),
+            clients: Self::strings_to_fixed_bytes(&input.clients),
+            model_provider: Self::string_to_fixed_bytes(&input.model_provider),
             settings: input.settings.into(),
-            bio: input
-                .bio
-                .iter()
-                .map(|b| b.as_bytes().try_into().unwrap())
-                .collect::<Vec<[u8; 32]>>()
-                .try_into()
-                .unwrap(),
-            lore: input
-                .lore
-                .iter()
-                .map(|l| l.as_bytes().try_into().unwrap())
-                .collect::<Vec<[u8; 32]>>()
-                .try_into()
-                .unwrap(),
-            knowledge: input
-                .knowledge
-                .iter()
-                .map(|k| k.as_bytes().try_into().unwrap())
-                .collect::<Vec<[u8; 32]>>()
-                .try_into()
-                .unwrap(),
-            topics: input
-                .topics
-                .iter()
-                .map(|t| t.as_bytes().try_into().unwrap())
-                .collect::<Vec<[u8; 32]>>()
-                .try_into()
-                .unwrap(),
+            bio: Self::strings_to_fixed_bytes(&input.bio),
+            lore: Self::strings_to_fixed_bytes(&input.lore),
+            knowledge: Self::strings_to_fixed_bytes(&input.knowledge),
+            topics: Self::strings_to_fixed_bytes(&input.topics),
             style: input.style.into(),
-            adjectives: input
-                .adjectives
-                .iter()
-                .map(|a| a.as_bytes().try_into().unwrap())
-                .collect::<Vec<[u8; 32]>>()
-                .try_into()
-                .unwrap(),
+            adjectives: Self::strings_to_fixed_bytes(&input.adjectives),
             bump,
             authority: *authority,
         }

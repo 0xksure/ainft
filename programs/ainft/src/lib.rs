@@ -102,9 +102,10 @@ pub mod ainft {
     /// * `config_input` - The character configuration input
     pub fn create_character_config(
         ctx: Context<CreateCharacterConfig>,
+        id: String,
         config_input: CharacterConfigInput,
     ) -> Result<()> {
-        instructions::create_character_config_handler(ctx, config_input)
+        instructions::create_character_config_handler(ctx, id, config_input)
     }
 
     /// Mints a new AI NFT from an existing Metaplex collection
@@ -226,107 +227,120 @@ pub mod ainft {
         instructions::update_ai_character_config_handler(ctx)
     }
 
-    /// Updates an AI NFT's character name
+    /// Updates an AI NFT's character names
     pub fn update_character_name(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         name: String,
     ) -> Result<()> {
-        instructions::update_character_name_handler(ctx, name)
+        instructions::update_character_name_handler(ctx, id, name)
     }
 
     /// Updates an AI NFT's supported clients
     pub fn update_character_clients(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         clients: Vec<String>,
     ) -> Result<()> {
-        instructions::update_character_clients_handler(ctx, clients)
+        instructions::update_character_clients_handler(ctx, id, clients)
     }
 
     /// Updates an AI NFT's model provider
     pub fn update_character_model_provider(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         provider: String,
     ) -> Result<()> {
-        instructions::update_character_model_provider_handler(ctx, provider)
+        instructions::update_character_model_provider_handler(ctx, id, provider)
     }
 
     /// Updates an AI NFT's voice settings
     pub fn update_character_voice_settings(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         model: [u8; 32],
     ) -> Result<()> {
-        instructions::update_character_voice_settings_handler(ctx, model)
+        instructions::update_character_voice_settings_handler(ctx, id, model)
     }
 
     /// Updates an AI NFT's bio
     pub fn update_character_bio(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         bio: Vec<String>,
     ) -> Result<()> {
-        instructions::update_character_bio_handler(ctx, bio)
+        instructions::update_character_bio_handler(ctx, id, bio)
     }
 
     /// Updates an AI NFT's lore
     pub fn update_character_lore(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         lore: Vec<String>,
     ) -> Result<()> {
-        instructions::update_character_lore_handler(ctx, lore)
+        instructions::update_character_lore_handler(ctx, id, lore)
     }
 
     /// Updates an AI NFT's knowledge
     pub fn update_character_knowledge(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         knowledge: Vec<String>,
     ) -> Result<()> {
-        instructions::update_character_knowledge_handler(ctx, knowledge)
+        instructions::update_character_knowledge_handler(ctx, id, knowledge)
     }
 
     /// Updates an AI NFT's topics
     pub fn update_character_topics(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         topics: Vec<String>,
     ) -> Result<()> {
-        instructions::update_character_topics_handler(ctx, topics)
+        instructions::update_character_topics_handler(ctx, id, topics)
     }
 
     /// Updates an AI NFT's style configuration
     pub fn update_character_style(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         style: StyleConfigInput,
     ) -> Result<()> {
-        instructions::update_character_style_handler(ctx, style)
+        instructions::update_character_style_handler(ctx, id, style)
     }
 
     /// Updates an AI NFT's adjectives
     pub fn update_character_adjectives(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         adjectives: Vec<String>,
     ) -> Result<()> {
-        instructions::update_character_adjectives_handler(ctx, adjectives)
+        instructions::update_character_adjectives_handler(ctx, id, adjectives)
     }
 
     /// Updates an AI NFT's style all configuration
     pub fn update_character_style_all(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         style_all: [[u8; 32]; 5],
     ) -> Result<()> {
-        instructions::update_character_style_all_handler(ctx, style_all)
+        instructions::update_character_style_all_handler(ctx, id, style_all)
     }
 
     /// Updates an AI NFT's style chat configuration
     pub fn update_character_style_chat(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         style_chat: [[u8; 32]; 5],
     ) -> Result<()> {
-        instructions::update_character_style_chat_handler(ctx, style_chat)
+        instructions::update_character_style_chat_handler(ctx, id, style_chat)
     }
 
     /// Updates an AI NFT's style post configuration
     pub fn update_character_style_post(
         ctx: Context<UpdateCharacterConfigField>,
+        id: String,
         style_post: [[u8; 32]; 5],
     ) -> Result<()> {
-        instructions::update_character_style_post_handler(ctx, style_post)
+        instructions::update_character_style_post_handler(ctx, id, style_post)
     }
 }

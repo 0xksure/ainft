@@ -116,7 +116,7 @@ export function findAiCharacterMintPDA(
     name: string
 ): [PublicKey, number] {
     return PublicKey.findProgramAddressSync(
-        [Buffer.from("mint"), aiNft.toBuffer(), Buffer.from(name)],
+        [Buffer.from("premint"), aiNft.toBuffer(), Buffer.from(name)],
         PROGRAM_ID
     );
 }
@@ -199,6 +199,17 @@ export function findPremintedNftMintPDA(
             collection.toBuffer(),
             Buffer.from(name),
         ],
+        PROGRAM_ID
+    );
+}
+
+/// Find the PDA for a character config
+export function findCharacterConfigPDA(
+    authority: PublicKey,
+    id: string
+): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from("character_config"), authority.toBuffer(), Buffer.from(id)],
         PROGRAM_ID
     );
 }

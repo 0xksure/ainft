@@ -3,50 +3,33 @@ use crate::{
     state::{AiCharacterNFT, AiNft, CharacterConfig, StyleConfigInput},
 };
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, TokenAccount};
+use anchor_spl::token::{spl_token::instruction, Mint, TokenAccount};
 
 #[derive(Accounts)]
+#[instruction(id: String)]
 pub struct UpdateCharacterConfigField<'info> {
     // app ai nft account
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = ["app_ainft".as_bytes()],
+        bump,
+    )]
     pub ai_nft: Account<'info, AiNft>,
 
     #[account(
-         mut,
-         // make sure the ai character is associated with the agent nft mint
-         constraint = ai_character.load().unwrap().character_nft_mint == ai_character_mint.key() @ AiNftError::InvalidAgentNftMint,
-     )]
-    pub ai_character: AccountLoader<'info, AiCharacterNFT>,
-
-    #[account(mut)]
+        mut,
+        seeds = ["character_config".as_bytes(), authority.key().as_ref(), id.as_bytes()],
+        bump,
+    )]
     pub character_config: AccountLoader<'info, CharacterConfig>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
-
-    // the mint of the agent nft
-    #[account(
-         mut,
-         constraint = ai_character_mint.key() == ai_character.load().unwrap().character_nft_mint @ AiNftError::InvalidAgentNftMint,
-         constraint = ai_character_mint.mint_authority.is_some() && ai_character_mint.mint_authority.unwrap() == ai_nft.key() @ AiNftError::InvalidMintAuthority,
-     )]
-    pub ai_character_mint: Account<'info, Mint>,
-
-    // token account of the agent nft
-    #[account(
-         mut,
-         // mint of the token account should be the agent nft mint
-         constraint = authority_ai_character_token_account.mint == ai_character_mint.key() @ AiNftError::InvalidAgentNftMint,
-         // owner of the token account should be the authority
-         constraint = authority_ai_character_token_account.owner == authority.key() @ AiNftError::InvalidOwner,
-        // the token accounts should contain the agent nft
-        constraint = authority_ai_character_token_account.amount == 1 @ AiNftError::InvalidAgentNftTokenAccount,
-     )]
-    pub authority_ai_character_token_account: Account<'info, TokenAccount>,
 }
 
 pub fn update_character_name_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     name: String,
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -56,6 +39,7 @@ pub fn update_character_name_handler(
 
 pub fn update_character_clients_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     clients: Vec<String>,
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -65,6 +49,7 @@ pub fn update_character_clients_handler(
 
 pub fn update_character_model_provider_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     provider: String,
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -74,6 +59,7 @@ pub fn update_character_model_provider_handler(
 
 pub fn update_character_voice_settings_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     model: [u8; 32],
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -83,6 +69,7 @@ pub fn update_character_voice_settings_handler(
 
 pub fn update_character_bio_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     bio: Vec<String>,
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -92,6 +79,7 @@ pub fn update_character_bio_handler(
 
 pub fn update_character_lore_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     lore: Vec<String>,
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -101,6 +89,7 @@ pub fn update_character_lore_handler(
 
 pub fn update_character_knowledge_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     knowledge: Vec<String>,
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -110,6 +99,7 @@ pub fn update_character_knowledge_handler(
 
 pub fn update_character_topics_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     topics: Vec<String>,
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -119,6 +109,7 @@ pub fn update_character_topics_handler(
 
 pub fn update_character_style_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     style: StyleConfigInput,
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -128,6 +119,7 @@ pub fn update_character_style_handler(
 
 pub fn update_character_adjectives_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     adjectives: Vec<String>,
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -137,6 +129,7 @@ pub fn update_character_adjectives_handler(
 
 pub fn update_character_style_all_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     style_all: [[u8; 32]; 5],
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -146,6 +139,7 @@ pub fn update_character_style_all_handler(
 
 pub fn update_character_style_chat_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     style_chat: [[u8; 32]; 5],
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
@@ -155,6 +149,7 @@ pub fn update_character_style_chat_handler(
 
 pub fn update_character_style_post_handler(
     ctx: Context<UpdateCharacterConfigField>,
+    id: String,
     style_post: [[u8; 32]; 5],
 ) -> Result<()> {
     let mut character_config = ctx.accounts.character_config.load_mut()?;
