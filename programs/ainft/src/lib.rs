@@ -8,7 +8,7 @@ use instructions::*;
 use state::CharacterConfigInput;
 use state::StyleConfigInput;
 
-declare_id!("14M8GDtWobqndjTrJ4sDZJ2CY74TXyGWGJzJoAE4TNYh");
+declare_id!("3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD");
 
 /// AI NFT Program
 ///

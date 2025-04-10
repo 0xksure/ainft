@@ -8,7 +8,7 @@ import { associatedAddress } from '@coral-xyz/anchor/dist/cjs/utils/token';
 const METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 dotenv.config();
 
-export const PROGRAM_ID = new PublicKey("14M8GDtWobqndjTrJ4sDZJ2CY74TXyGWGJzJoAE4TNYh");
+export const PROGRAM_ID = new PublicKey("3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD");
 
 export function getConnection(): Connection {
     const network = process.env.NETWORK || 'devnet';

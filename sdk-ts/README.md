@@ -17,7 +17,7 @@ cp .env.example .env
 3. Update the `.env` file with your configuration:
 ```
 PAYER_PRIVATE_KEY=your_base58_encoded_private_key
-PROGRAM_ID=14M8GDtWobqndjTrJ4sDZJ2CY74TXyGWGJzJoAE4TNYh
+PROGRAM_ID=3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD
 NETWORK=devnet # devnet, testnet, or mainnet-beta
 ```
 

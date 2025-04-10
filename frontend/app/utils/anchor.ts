@@ -53,7 +53,7 @@ export function findMetadataPDA(masterMint: PublicKey): [PublicKey, number] {
 }
 
 // Define the AINFT program ID
-export const AINFT_PROGRAM_ID = new PublicKey('14M8GDtWobqndjTrJ4sDZJ2CY74TXyGWGJzJoAE4TNYh');
+export const AINFT_PROGRAM_ID = new PublicKey('3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD');
 
 // Define the network types
 export type Network = 'mainnet-beta' | 'devnet' | 'testnet' | 'localnet' | 'sonic-devnet';

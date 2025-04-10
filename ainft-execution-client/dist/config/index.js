@@ -9,7 +9,7 @@ dotenv_1.default.config();
 exports.config = {
     // Solana configuration
     rpcUrl: process.env.RPC_URL || "https://api.devnet.solana.com",
-    programId: process.env.PROGRAM_ID || "14M8GDtWobqndjTrJ4sDZJ2CY74TXyGWGJzJoAE4TNYh",
+    programId: process.env.PROGRAM_ID || "3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD",
     keypairPath: process.env.KEYPAIR_PATH || "./keypair.json",
     // LLM provider configuration
     llmProvider: process.env.LLM_PROVIDER || "openai",
