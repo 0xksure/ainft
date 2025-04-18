@@ -10,7 +10,7 @@ use crate::events::CollectionCreated;
 use crate::state::AINFTCollection;
 
 #[derive(Accounts)]
-#[instruction(name: String, symbol: String, uri: String)]
+#[instruction(name: String, uri: String)]
 pub struct CreateCollection<'info> {
     #[account(
         init,
@@ -75,11 +75,12 @@ impl<'info> CreateCollection<'info> {
 pub fn create_collection_handler(
     ctx: Context<CreateCollection>,
     name: String,
-    symbol: String,
     uri: String,
+    description: String,
     royalty_basis_points: u16,
     mint_price: u64,
-    total_supply: u64,
+    start_mint_date: i64,
+    end_mint_date: i64,
 ) -> Result<()> {
     // Initialize collection account
 
@@ -103,7 +104,7 @@ pub fn create_collection_handler(
             .with_signer(&[&seeds]),
         DataV2 {
             name: name.clone(),
-            symbol: symbol.clone(),
+            symbol: "".to_string(), // Empty symbol
             uri: uri.clone(),
             seller_fee_basis_points: royalty_basis_points,
             creators: Some(vec![creator]),
@@ -120,11 +121,12 @@ pub fn create_collection_handler(
         authority,
         ctx.accounts.collection_mint.key(),
         name.clone(),
-        symbol.clone(),
         uri.clone(),
+        description,
         royalty_basis_points,
         mint_price,
-        total_supply,
+        start_mint_date,
+        end_mint_date,
         ctx.bumps.collection,
     );
 

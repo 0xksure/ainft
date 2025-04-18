@@ -4,11 +4,12 @@ mod error;
 mod events;
 pub mod instructions;
 mod state;
+use instructions::update_collection_whitelist::WhitelistAction;
 use instructions::*;
 use state::CharacterConfigInput;
 use state::StyleConfigInput;
 
-declare_id!("3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD");
+declare_id!("ArLePiNppazCKH1obDtf6BVUaid7h5YxEpP4UGpjMqo5");
 
 /// AI NFT Program
 ///
@@ -41,21 +42,90 @@ pub mod ainft {
     pub fn create_ainft_collection(
         ctx: Context<CreateCollection>,
         name: String,
-        symbol: String,
         uri: String,
+        description: String,
         royalty_basis_points: u16,
         mint_price: u64,
-        total_supply: u64,
+        start_mint_date: i64,
+        end_mint_date: i64,
     ) -> Result<()> {
         instructions::create_collection_handler(
             ctx,
             name,
-            symbol,
             uri,
+            description,
             royalty_basis_points,
             mint_price,
-            total_supply,
+            start_mint_date,
+            end_mint_date,
         )
+    }
+
+    /// Updates a collection's settings
+    ///
+    /// Allows the collection owner to update various collection settings
+    /// before preminting is finalized.
+    ///
+    /// # Arguments
+    /// * `collection_name` - Name of the collection to update
+    /// * `new_name` - Optional new name
+    /// * `new_uri` - Optional new URI
+    /// * `new_description` - Optional new description
+    /// * `new_mint_price` - Optional new mint price
+    /// * `new_start_mint_date` - Optional new start date for minting (unix timestamp)
+    /// * `new_end_mint_date` - Optional new end date for minting (unix timestamp)
+    pub fn update_collection(
+        ctx: Context<UpdateCollection>,
+        collection_name: String,
+        new_name: Option<String>,
+        new_uri: Option<String>,
+        new_description: Option<String>,
+        new_mint_price: Option<u64>,
+        new_start_mint_date: Option<i64>,
+        new_end_mint_date: Option<i64>,
+    ) -> Result<()> {
+        instructions::update_collection_handler(
+            ctx,
+            collection_name,
+            new_name,
+            new_uri,
+            new_description,
+            new_mint_price,
+            new_start_mint_date,
+            new_end_mint_date,
+        )
+    }
+
+    /// Updates a collection's whitelist
+    ///
+    /// Allows the collection owner to add or remove wallets from the whitelist
+    /// before preminting is finalized.
+    ///
+    /// # Arguments
+    /// * `collection_name` - Name of the collection to update
+    /// * `wallet` - Wallet to add or remove from whitelist
+    /// * `action` - Whether to add or remove the wallet
+    pub fn update_collection_whitelist(
+        ctx: Context<UpdateCollectionWhitelist>,
+        collection_name: String,
+        wallet: Pubkey,
+        action: WhitelistAction,
+    ) -> Result<()> {
+        instructions::update_collection_whitelist_handler(ctx, collection_name, wallet, action)
+    }
+
+    /// Clears a collection's whitelist
+    ///
+    /// Allows the collection owner to clear the entire whitelist
+    /// before preminting is finalized.
+    ///
+    /// # Arguments
+    /// * `collection_name` - Name of the collection to update
+    pub fn clear_collection_whitelist(
+        ctx: Context<UpdateCollectionWhitelist>,
+        collection_name: String,
+    ) -> Result<()> {
+        instructions::clear_collection_whitelist_handler(ctx, collection_name)
     }
 
     /// Creates a preminted NFT owned by the collection
@@ -342,5 +412,20 @@ pub mod ainft {
         style_post: [[u8; 32]; 5],
     ) -> Result<()> {
         instructions::update_character_style_post_handler(ctx, id, style_post)
+    }
+
+    /// Finalizes the preminting phase for a collection
+    ///
+    /// After finalization, no more NFTs can be preminted in the collection,
+    /// and the collection settings and whitelist cannot be updated anymore.
+    /// This is irreversible.
+    ///
+    /// # Arguments
+    /// * `collection_name` - Name of the collection to finalize
+    pub fn finalize_preminting(
+        ctx: Context<FinalizePreminting>,
+        collection_name: String,
+    ) -> Result<()> {
+        instructions::finalize_preminting_handler(ctx, collection_name)
     }
 }

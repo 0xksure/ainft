@@ -30,7 +30,7 @@ export interface ExecutionClientConfig {
 export const config: ExecutionClientConfig = {
   // Solana configuration
   rpcUrl: process.env.RPC_URL || "https://api.devnet.solana.com",
-  programId: process.env.PROGRAM_ID || "3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD",
+  programId: process.env.PROGRAM_ID || "ArLePiNppazCKH1obDtf6BVUaid7h5YxEpP4UGpjMqo5",
   keypairPath: process.env.KEYPAIR_PATH || "./keypair.json",
 
   // LLM provider configuration

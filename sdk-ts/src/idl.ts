@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/ainft.json`.
  */
 export type IDL = {
-    "address": "3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD",
+    "address": "ArLePiNppazCKH1obDtf6BVUaid7h5YxEpP4UGpjMqo5",
     "metadata": {
         "name": "ainft",
         "version": "0.1.0",

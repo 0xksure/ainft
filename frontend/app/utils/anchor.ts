@@ -52,8 +52,47 @@ export function findMetadataPDA(masterMint: PublicKey): [PublicKey, number] {
     );
 }
 
+export function findCollectionPDA(
+    authority: PublicKey,
+    name: string
+): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from("collection"), authority.toBuffer(), Buffer.from(name)],
+        AINFT_PROGRAM_ID
+    );
+}
+
+export function findCollectionMintPDA(
+    collection: PublicKey
+): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from("collection_mint"), collection.toBuffer()],
+        AINFT_PROGRAM_ID
+    );
+}
+
+export function findPremintedNftMintPDA(
+    collection: PublicKey,
+    name: string
+): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from("premint"), collection.toBuffer(), Buffer.from(name)],
+        AINFT_PROGRAM_ID
+    );
+}
+
+export function findCharacterConfigPDA(
+    authority: PublicKey,
+    configId: string
+): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+        [Buffer.from("character_config"), authority.toBuffer(), Buffer.from(configId)],
+        AINFT_PROGRAM_ID
+    );
+}
+
 // Define the AINFT program ID
-export const AINFT_PROGRAM_ID = new PublicKey('3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD');
+export const AINFT_PROGRAM_ID = new PublicKey('ArLePiNppazCKH1obDtf6BVUaid7h5YxEpP4UGpjMqo5');
 
 // Define the network types
 export type Network = 'mainnet-beta' | 'devnet' | 'testnet' | 'localnet' | 'sonic-devnet';
@@ -120,6 +159,30 @@ export interface CharacterConfig {
     topics: string[];
     style: any;
     adjectives: string[];
+}
+
+// Get program instance
+export const getProgram = async (): Promise<Program<Ainft>> => {
+    // Initialize a connection using the network from the store
+    const { network, connection } = useNetworkStore.getState();
+    if (!connection) {
+        throw new Error('No connection available');
+    }
+
+    // Create a read-only provider (no wallet needed)
+    const provider = new AnchorProvider(
+        connection,
+        // Use a dummy wallet since we're only reading data
+        {
+            publicKey: Keypair.generate().publicKey,
+            signTransaction: async (tx) => tx,
+            signAllTransactions: async (txs) => txs,
+        } as any,
+        { preflightCommitment: 'confirmed' }
+    );
+
+    // Initialize program with IDL
+    return new Program<Ainft>(IDL as Ainft, provider);
 }
 
 // Hook to get the Anchor program
@@ -575,8 +638,8 @@ export const registerExecutionClient = async (
         const signature = await connection.sendRawTransaction(signedTransaction.serialize());
         const confirmation = await connection.confirmTransaction({
             signature,
-            blockhash: blockhash,
-            lastValidBlockHeight: lastValidBlockHeight
+            blockhash,
+            lastValidBlockHeight
         });
         if (confirmation.value.err) {
             throw new Error("Transaction failed to confirm");
@@ -652,29 +715,194 @@ export const updateExecutionClientConfig = async (
     }
 };
 
-// Stake compute tokens
-export const stakeCompute = async (
-    program: any,
-    wallet: PublicKey,
-    amount: number
+// Create a stake account for compute tokens
+export const createStakeAccount = async (
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    executionClientAddress?: PublicKey
 ) => {
     if (!program) throw new Error('Program not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet not connected');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
 
     try {
-        // Call the stake_compute instruction
-        const tx = await program.methods
-            .stakeCompute(new BN(amount))
-            .accounts({
-                authority: wallet,
-                // Other accounts would be derived based on the program's requirements
-                systemProgram: web3.SystemProgram.programId,
-            })
-            .rpc();
+        // Find necessary PDAs
+        const [appAinftPda] = findAppAinftPDA();
+        const [computeMint] = findComputeMintPDA();
 
-        console.log('Compute tokens staked with transaction:', tx);
+        // Get execution client info
+        const executionClient = executionClientAddress || await fetchExecutionClientByAuthority(program, wallet.publicKey);
+        if (!executionClient) {
+            throw new Error('No execution client found for this wallet');
+        }
+
+        // Check if execution client is a PublicKey or an account object
+        const executionClientKey = executionClient instanceof PublicKey
+            ? executionClient
+            : executionClient.publicKey;
+
+        // Find staker account PDA
+        const [staker] = PublicKey.findProgramAddressSync(
+            [Buffer.from("staker"), executionClientKey.toBuffer(), wallet.publicKey.toBuffer()],
+            program.programId
+        );
+
+        // Create staker token account
+        const stakerTokenAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: wallet.publicKey
+        });
+
+        // Create instruction
+        const ix = await program.methods
+            .createStakeAccount()
+            .accounts({
+                aiNft: appAinftPda,
+                executionClient: executionClientKey,
+                staker: staker,
+                stakerTokenAccount: stakerTokenAccount,
+                computeMint: computeMint,
+                authority: wallet.publicKey,
+                tokenProgram: splToken.TOKEN_PROGRAM_ID,
+                associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+                systemProgram: web3.SystemProgram.programId,
+                rent: web3.SYSVAR_RENT_PUBKEY
+            })
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+
+        // Send and confirm transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+        });
+
+        console.log('Stake account created with transaction:', signature);
 
         return {
-            txId: tx,
+            txId: signature,
+            staker
+        };
+    } catch (error) {
+        console.error('Error creating stake account:', error);
+        throw error;
+    }
+};
+
+// Stake compute tokens
+export const stakeCompute = async (
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    amount: BN,
+    executionClientAddress?: PublicKey
+) => {
+    if (!program) throw new Error('Program not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet not connected');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
+
+    try {
+        // Find necessary PDAs
+        const [appAinftPda] = findAppAinftPDA();
+        const [computeMint] = findComputeMintPDA();
+
+        // Get execution client info
+        const executionClient = executionClientAddress || await fetchExecutionClientByAuthority(program, wallet.publicKey);
+        if (!executionClient) {
+            throw new Error('No execution client found for this wallet');
+        }
+
+        // Check if execution client is a PublicKey or an account object
+        const executionClientKey = executionClient instanceof PublicKey
+            ? executionClient
+            : executionClient.publicKey;
+
+        // Find staker account PDA
+        const [staker] = PublicKey.findProgramAddressSync(
+            [Buffer.from("staker"), executionClientKey.toBuffer(), wallet.publicKey.toBuffer()],
+            program.programId
+        );
+
+        // Create or find token accounts
+        const stakerComputeAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: wallet.publicKey
+        });
+
+        const [stakedMint] = PublicKey.findProgramAddressSync(
+            [Buffer.from("staked_mint"), appAinftPda.toBuffer(), executionClientKey.toBuffer()],
+            program.programId
+        );
+
+        const stakedTokenAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: appAinftPda
+        });
+
+        const authorityLiquidStakingTokenAccount = await utils.token.associatedAddress({
+            mint: stakedMint,
+            owner: wallet.publicKey
+        });
+
+        // Create instruction
+        const ix = await program.methods
+            .stakeCompute(amount)
+            .accounts({
+                aiNft: appAinftPda,
+                executionClient: executionClientKey,
+                stakePoolTokenAccount: stakedTokenAccount,
+                liquidStakingTokenMint: stakedMint,
+                authorityComputeAccount: stakerComputeAccount,
+                authorityLiquidStakingTokenAccount: authorityLiquidStakingTokenAccount,
+                stakerAccount: staker,
+                authority: wallet.publicKey,
+                tokenProgram: splToken.TOKEN_PROGRAM_ID,
+                associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+                systemProgram: web3.SystemProgram.programId,
+                rent: web3.SYSVAR_RENT_PUBKEY
+            })
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+
+        // Send and confirm transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+        });
+
+        console.log('Compute tokens staked with transaction:', signature);
+
+        return {
+            txId: signature
         };
     } catch (error) {
         console.error('Error staking compute tokens:', error);
@@ -684,27 +912,101 @@ export const stakeCompute = async (
 
 // Unstake compute tokens
 export const unstakeCompute = async (
-    program: any,
-    wallet: PublicKey,
-    amount: number
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    amount: BN,
+    executionClientAddress?: PublicKey
 ) => {
     if (!program) throw new Error('Program not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet not connected');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
 
     try {
-        // Call the unstake_compute instruction
-        const tx = await program.methods
-            .unstakeCompute(new BN(amount))
-            .accounts({
-                authority: wallet,
-                // Other accounts would be derived based on the program's requirements
-                systemProgram: web3.SystemProgram.programId,
-            })
-            .rpc();
+        // Find necessary PDAs
+        const [appAinftPda] = findAppAinftPDA();
+        const [computeMint] = findComputeMintPDA();
 
-        console.log('Compute tokens unstaked with transaction:', tx);
+        // Get execution client info
+        const executionClient = executionClientAddress || await fetchExecutionClientByAuthority(program, wallet.publicKey);
+        if (!executionClient) {
+            throw new Error('No execution client found for this wallet');
+        }
+
+        // Check if execution client is a PublicKey or an account object
+        const executionClientKey = executionClient instanceof PublicKey
+            ? executionClient
+            : executionClient.publicKey;
+
+        // Find staker account PDA
+        const [staker] = PublicKey.findProgramAddressSync(
+            [Buffer.from("staker"), executionClientKey.toBuffer(), wallet.publicKey.toBuffer()],
+            program.programId
+        );
+
+        // Create or find token accounts
+        const stakerComputeAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: wallet.publicKey
+        });
+
+        const [stakedMint] = PublicKey.findProgramAddressSync(
+            [Buffer.from("staked_mint"), appAinftPda.toBuffer(), executionClientKey.toBuffer()],
+            program.programId
+        );
+
+        const stakedTokenAccount = await utils.token.associatedAddress({
+            mint: computeMint,
+            owner: appAinftPda
+        });
+
+        const authorityLiquidStakingTokenAccount = await utils.token.associatedAddress({
+            mint: stakedMint,
+            owner: wallet.publicKey
+        });
+
+        // Create instruction
+        const ix = await program.methods
+            .unstakeCompute(amount)
+            .accounts({
+                aiNft: appAinftPda,
+                executionClient: executionClientKey,
+                liquidStakingTokenMint: stakedMint,
+                stakePoolTokenAccount: stakedTokenAccount,
+                authorityComputeAccount: stakerComputeAccount,
+                authorityLiquidStakingTokenAccount: authorityLiquidStakingTokenAccount,
+                stakerAccount: staker,
+                authority: wallet.publicKey,
+                tokenProgram: splToken.TOKEN_PROGRAM_ID,
+                systemProgram: web3.SystemProgram.programId
+            })
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+
+        // Send and confirm transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+        });
+
+        console.log('Compute tokens unstaked with transaction:', signature);
 
         return {
-            txId: tx,
+            txId: signature
         };
     } catch (error) {
         console.error('Error unstaking compute tokens:', error);
@@ -720,9 +1022,15 @@ export const getComputeTokenBalance = async (
     try {
         console.log('Fetching compute token balance for wallet:', walletPublicKey.toString());
 
-        // Find the compute mint PDA
-        const [computeMint] = findComputeMintPDA();
-        console.log('Compute token mint address:', computeMint.toString());
+        // Get the App AiNFT account to find the actual compute mint
+        const [appAinftPda] = findAppAinftPDA();
+
+        // Fetch the AiNft state account to get the real compute mint
+        const program = await getProgram();
+        const appAinftAccount = await program.account.aiNft.fetch(appAinftPda);
+        const computeMint = appAinftAccount.computeMint;
+
+        console.log('Actual compute token mint address:', computeMint.toString());
 
         // Find the associated token account for the wallet
         const tokenAccount = await anchor.utils.token.associatedAddress({
@@ -765,8 +1073,15 @@ export const getAiCharacterComputeTokenBalance = async (
     try {
         console.log('Fetching compute token balance for AI character:', aiCharacterMint.toString());
 
-        // Find the compute mint PDA
-        const [computeMint] = findComputeMintPDA();
+        // Get the App AiNFT account to find the actual compute mint
+        const [appAinftPda] = findAppAinftPDA();
+
+        // Fetch the AiNft state account to get the real compute mint
+        const program = await getProgram();
+        const appAinftAccount = await program.account.aiNft.fetch(appAinftPda);
+        const computeMint = appAinftAccount.computeMint;
+
+        console.log('Using compute token mint address:', computeMint.toString());
 
         // Find the AI character PDA
         const [aiCharacter] = findAiCharacterPDA(aiCharacterMint);
@@ -800,6 +1115,91 @@ export const getAiCharacterComputeTokenBalance = async (
         console.error('Error in getAiCharacterComputeTokenBalance:', error);
         // Return 0 instead of throwing to prevent UI errors
         return 0;
+    }
+};
+
+// Get the compute mint address from on-chain AiNft state
+export const getComputeMint = async (
+    program: Program<Ainft>
+): Promise<PublicKey> => {
+    try {
+        // Find the AiNft PDA
+        const [appAinftPda] = findAppAinftPDA();
+
+        // Fetch the AiNft account data
+        const appAinftAccount = await program.account.aiNft.fetch(appAinftPda);
+
+        // Get the compute mint address
+        const computeMint = appAinftAccount.computeMint;
+
+        console.log('Fetched compute mint from state:', computeMint.toString());
+
+        return computeMint;
+    } catch (error) {
+        console.error('Error getting compute mint from AiNft state:', error);
+
+        // Fallback to the PDA-derived mint as a last resort
+        const [computeMintPda] = findComputeMintPDA();
+        console.warn('Falling back to PDA-derived compute mint:', computeMintPda.toString());
+
+        return computeMintPda;
+    }
+};
+
+// Get both agent and wallet compute balances in one call
+export const getComputeBalances = async (
+    program: Program<Ainft>,
+    connection: Connection,
+    walletPublicKey: PublicKey | null,
+    aiCharacterMint: PublicKey | null
+): Promise<{ walletBalance: number, agentBalance: number }> => {
+    try {
+        // Default balance values
+        let walletBalance = 0;
+        let agentBalance = 0;
+
+        // Get the compute mint address from the AiNft state
+        const computeMint = await getComputeMint(program);
+
+        // Get wallet balance if wallet is connected
+        if (walletPublicKey !== null) {
+            // Find the associated token account for the wallet
+            const walletTokenAccount = await anchor.utils.token.associatedAddress({
+                mint: computeMint,
+                owner: walletPublicKey
+            });
+
+            // Check if the token account exists
+            const walletAccountInfo = await connection.getAccountInfo(walletTokenAccount);
+            if (walletAccountInfo) {
+                const tokenAmount = await connection.getTokenAccountBalance(walletTokenAccount);
+                walletBalance = tokenAmount.value.uiAmount || 0;
+            }
+        }
+
+        // Get agent balance if agent mint is provided
+        if (aiCharacterMint !== null) {
+            // Find the AI character PDA
+            const [aiCharacter] = findAiCharacterPDA(aiCharacterMint);
+
+            // Find the associated token account for the AI character
+            const agentTokenAccount = anchor.utils.token.associatedAddress({
+                mint: computeMint,
+                owner: aiCharacter
+            });
+
+            // Check if the token account exists
+            const agentAccountInfo = await connection.getAccountInfo(agentTokenAccount);
+            if (agentAccountInfo) {
+                const tokenAmount = await connection.getTokenAccountBalance(agentTokenAccount);
+                agentBalance = tokenAmount.value.uiAmount || 0;
+            }
+        }
+
+        return { walletBalance, agentBalance };
+    } catch (error) {
+        console.error('Error getting compute balances:', error);
+        return { walletBalance: 0, agentBalance: 0 };
     }
 };
 
@@ -1174,6 +1574,770 @@ export const transferComputeTokensToAiCharacter = async (
         return txid;
     } catch (error) {
         console.error('Error transferring compute tokens:', error);
+        throw error;
+    }
+};
+
+export const createAiNftCollection = async (
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    name: string,
+    uri: string,
+    description: string,
+    royaltyBasisPoints: number,
+    mintPriceLamports: number,
+    startMintDate: number = 0,
+    endMintDate: number = 0
+) => {
+    if (!program) throw new Error('Program not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet not connected');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
+
+    try {
+        // Find collection PDA
+        const [collection] = findCollectionPDA(wallet.publicKey, name);
+        const [collectionMint] = findCollectionMintPDA(collection);
+        const [collectionMetadata] = findMetadataPDA(collectionMint);
+
+        // Create the instruction - the symbol is empty string by default in the smart contract
+        const ix = await program.methods
+            .createAinftCollection(
+                name,
+                uri,
+                description,
+                royaltyBasisPoints,
+                new BN(mintPriceLamports),
+                new BN(startMintDate),
+                new BN(endMintDate)
+            )
+            .accounts({
+                collection,
+                collectionMint,
+                collectionMetadata,
+                authority: wallet.publicKey,
+                tokenProgram: splToken.TOKEN_PROGRAM_ID,
+                metadataProgram: METADATA_PROGRAM_ID,
+                systemProgram: web3.SystemProgram.programId,
+                rent: web3.SYSVAR_RENT_PUBKEY,
+            })
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+
+        // Send and confirm transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+        });
+
+        if (confirmation.value.err) {
+            throw new Error(`Transaction failed to confirm: ${confirmation.value.err.toString()}`);
+        }
+
+        console.log('Collection created with transaction:', signature);
+        console.log('Collection address:', collection.toString());
+
+        return {
+            txId: signature,
+            collectionAddress: collection,
+        };
+    } catch (error) {
+        console.error('Error creating collection:', error);
+        throw error;
+    }
+};
+
+export const createCharacterConfig = async (
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    config: {
+        name: string;
+        modelProvider: string;
+        settings: {
+            voice: {
+                model: string;
+            };
+        };
+        bio: string[];
+        lore: string[];
+        knowledge: string[];
+        topics: string[];
+        style: any;
+        adjectives: string[];
+        clients: string[];
+    }
+) => {
+    if (!program) throw new Error('Program not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet not connected');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
+
+    try {
+        // Prepare the config data
+        const configId = config.name;
+
+        // Convert string arrays to byte arrays for on-chain storage
+        const voiceModel = stringToByteArray(config.settings.voice.model, 32);
+
+        // Transform style config
+        const styleAll = Array(5).fill([0]);
+        if (config.style && config.style.all) {
+            for (let i = 0; i < Math.min(config.style.all.length, 5); i++) {
+                styleAll[i] = Array.isArray(config.style.all[i]) ? config.style.all[i] : stringToByteArray(config.style.all[i], 32);
+            }
+        }
+
+        const styleChat = Array(5).fill([0]);
+        if (config.style && config.style.chat) {
+            for (let i = 0; i < Math.min(config.style.chat.length, 5); i++) {
+                styleChat[i] = Array.isArray(config.style.chat[i]) ? config.style.chat[i] : stringToByteArray(config.style.chat[i], 32);
+            }
+        }
+
+        const stylePost = Array(5).fill([0]);
+        if (config.style && config.style.post) {
+            for (let i = 0; i < Math.min(config.style.post.length, 5); i++) {
+                stylePost[i] = Array.isArray(config.style.post[i]) ? config.style.post[i] : stringToByteArray(config.style.post[i], 32);
+            }
+        }
+
+        // Ensure clients array has exactly 5 elements (pad with empty strings)
+        const clients = [...config.clients];
+        while (clients.length < 5) {
+            clients.push('');
+        }
+
+        // Create the instruction
+        const [characterConfig] = findCharacterConfigPDA(wallet.publicKey, configId);
+
+        const ix = await program.methods
+            .createCharacterConfig(configId, {
+                name: config.name,
+                clients: clients,
+                modelProvider: config.modelProvider,
+                settings: {
+                    voice: {
+                        model: voiceModel
+                    }
+                },
+                bio: config.bio,
+                lore: config.lore,
+                knowledge: config.knowledge,
+                topics: config.topics,
+                style: {
+                    all: styleAll,
+                    chat: styleChat,
+                    post: stylePost,
+                },
+                adjectives: config.adjectives
+            })
+            .accounts({
+                characterConfig,
+                authority: wallet.publicKey,
+                systemProgram: web3.SystemProgram.programId,
+            })
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+
+        // Send and confirm transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+        });
+
+        if (confirmation.value.err) {
+            throw new Error(`Transaction failed to confirm: ${confirmation.value.err.toString()}`);
+        }
+
+        console.log('Character config created with transaction:', signature);
+        console.log('Character config address:', characterConfig.toString());
+
+        return {
+            txId: signature,
+            configAddress: characterConfig,
+        };
+    } catch (error) {
+        console.error('Error creating character config:', error);
+        throw error;
+    }
+};
+
+export const premintNft = async (
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    collectionName: string,
+    nftName: string,
+    nftUri: string,
+    price: number,
+    characterConfigId?: string
+) => {
+    if (!program) throw new Error('Program not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet not connected');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
+
+    try {
+        // Find necessary PDAs
+        const [appAinftPda] = findAppAinftPDA();
+        const [collection] = findCollectionPDA(wallet.publicKey, collectionName);
+        const [premintedNftMint] = findPremintedNftMintPDA(collection, nftName);
+        const [aiCharacter] = findAiCharacterPDA(premintedNftMint);
+        const [nftMetadata] = findMetadataPDA(premintedNftMint);
+
+        // Create collection token account to hold the NFT until purchased
+        const collectionTokenAccount = await utils.token.associatedAddress({
+            mint: premintedNftMint,
+            owner: collection
+        });
+
+        // Get character config if provided
+        let characterConfig = null;
+        if (characterConfigId) {
+            const [configPda] = findCharacterConfigPDA(wallet.publicKey, characterConfigId);
+            characterConfig = configPda;
+        }
+
+        // Create the instruction
+        const ix = await program.methods
+            .createPremintedNft(
+                nftName,
+                nftUri,
+                collectionName,
+                new BN(price),
+                null // default execution client
+            )
+            .accounts({
+                aiNft: appAinftPda,
+                collection,
+                aiCharacter,
+                aiCharacterMint: premintedNftMint,
+                aiCharacterMetadata: nftMetadata,
+                characterConfig: characterConfig,
+                collectionTokenAccount,
+                authority: wallet.publicKey,
+                tokenProgram: splToken.TOKEN_PROGRAM_ID,
+                metadataProgram: METADATA_PROGRAM_ID,
+                systemProgram: web3.SystemProgram.programId,
+                rent: web3.SYSVAR_RENT_PUBKEY,
+                associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+
+        // Send and confirm transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+        });
+
+        if (confirmation.value.err) {
+            throw new Error(`Transaction failed to confirm: ${confirmation.value.err.toString()}`);
+        }
+
+        console.log('NFT preminted with transaction:', signature);
+        console.log('NFT mint address:', premintedNftMint.toString());
+        console.log('AI Character address:', aiCharacter.toString());
+
+        return {
+            txId: signature,
+            nftMintAddress: premintedNftMint,
+            aiCharacterAddress: aiCharacter,
+        };
+    } catch (error) {
+        console.error('Error preminting NFT:', error);
+        throw error;
+    }
+};
+
+export const purchasePremintedNft = async (
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    collectionAddress: PublicKey,
+    nftMintAddress: PublicKey,
+    aiCharacterAddress: PublicKey
+) => {
+    if (!program) throw new Error('Program not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet not connected');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
+
+    try {
+        // Find necessary PDAs
+        const [appAinftPda] = findAppAinftPDA();
+
+        // Create buyer's token account to receive the NFT
+        const buyerTokenAccount = await utils.token.associatedAddress({
+            mint: nftMintAddress,
+            owner: wallet.publicKey
+        });
+
+        // Get the collection's token account that currently holds the NFT
+        const collectionTokenAccount = await utils.token.associatedAddress({
+            mint: nftMintAddress,
+            owner: collectionAddress
+        });
+
+        // Get the collection account to find the authority
+        const collectionData = await program.account.ainftCollection.fetch(collectionAddress);
+
+        // Create the instruction
+        const ix = await program.methods
+            .mintAinftFromCollection()
+            .accounts({
+                aiNft: appAinftPda,
+                aiCharacter: aiCharacterAddress,
+                collection: collectionAddress,
+                nftMint: nftMintAddress,
+                collectionTokenAccount,
+                buyerTokenAccount,
+                buyer: wallet.publicKey,
+                collectionAuthority: collectionData.authority,
+                tokenProgram: splToken.TOKEN_PROGRAM_ID,
+                associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+                systemProgram: web3.SystemProgram.programId,
+                rent: web3.SYSVAR_RENT_PUBKEY,
+            })
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+
+        // Send and confirm transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+        });
+
+        if (confirmation.value.err) {
+            throw new Error(`Transaction failed to confirm: ${confirmation.value.err.toString()}`);
+        }
+
+        console.log('NFT purchased with transaction:', signature);
+
+        return {
+            txId: signature,
+        };
+    } catch (error) {
+        console.error('Error purchasing NFT:', error);
+        throw error;
+    }
+};
+
+export const fetchCollections = async (
+    program: Program<Ainft>,
+    connection: Connection,
+    authority?: PublicKey
+) => {
+    try {
+        let collections;
+
+        if (authority) {
+            // Fetch collections for a specific authority
+            collections = await program.account.ainftCollection.all([
+                {
+                    memcmp: {
+                        offset: 8, // Skip discriminator
+                        bytes: authority.toBase58()
+                    }
+                }
+            ]);
+        } else {
+            // Fetch all collections
+            collections = await program.account.ainftCollection.all();
+        }
+
+        return collections.map(collection => ({
+            publicKey: collection.publicKey,
+            authority: collection.account.authority,
+            name: collection.account.name,
+            // Use a default empty symbol if not present or convert to string if it's a byte array
+            symbol: typeof collection.account.symbol === 'string'
+                ? collection.account.symbol
+                : collection.account.symbol
+                    ? String.fromCharCode(...collection.account.symbol.filter(b => b !== 0))
+                    : '',
+            uri: collection.account.uri,
+            mint: collection.account.mint,
+            description: collection.account.description || '',
+            royaltyBasisPoints: collection.account.royaltyBasisPoints,
+            mintPrice: collection.account.mintPrice,
+            mintCount: collection.account.mintCount,
+            startMintDate: collection.account.startMintDate,
+            endMintDate: collection.account.endMintDate,
+            premintingFinalized: collection.account.premintingFinalized,
+            totalSupply: collection.account.totalSupply || collection.account.maxSupply,
+            bump: collection.account.bump,
+        }));
+    } catch (error) {
+        console.error('Error fetching collections:', error);
+        return [];
+    }
+};
+
+export const fetchPremintedNfts = async (
+    program: Program<Ainft>,
+    connection: Connection,
+    collectionAddress: PublicKey
+) => {
+    try {
+        // Fetch all AI characters
+        const aiCharacters = await program.account.aiCharacterNft.all();
+        console.log('Fetched all AI characters:', aiCharacters.length);
+
+        // The problem is that the collection address is not directly stored in the aiCharacterNft account
+        // We need to check each NFT manually to see if it belongs to this collection
+        const collection = await program.account.ainftCollection.fetch(collectionAddress);
+        console.log('Collection found:', collection.name);
+
+        // Filter for preminted NFTs that belong to this collection
+        const premintedNfts = aiCharacters.filter(character => {
+            // Check the token account - if it's owned by this collection, it's part of this collection
+            const tokenAccount = character.account.tokenAccount;
+            return (
+                // For a preminted NFT, the token account should be owned by the collection
+                tokenAccount &&
+                tokenAccount.equals(collectionAddress) ||
+                // Also include minted NFTs that were originally from this collection
+                character.account.isPreminted
+            );
+        });
+
+        console.log('Filtered preminted NFTs for collection:', premintedNfts.length);
+
+        return premintedNfts.map(nft => ({
+            publicKey: nft.publicKey,
+            aiNft: nft.account.appAiNftMint, // Note: field name in the account is appAiNftMint
+            mint: nft.account.characterNftMint, // Note: field name in the account is characterNftMint
+            name: typeof nft.account.name === 'string'
+                ? nft.account.name
+                : String.fromCharCode(...nft.account.name.filter(b => b !== 0)),
+            executionClient: nft.account.executionClient,
+            tokenAccount: nft.account.tokenAccount || PublicKey.default,
+            computeTokenAccount: nft.account.computeTokenAccount,
+            characterConfig: nft.account.characterConfigPubkey, // Note: field name is characterConfigPubkey
+            isPreminted: nft.account.isPreminted,
+            isMinted: nft.account.isMinted,
+            messageCount: typeof nft.account.messageCount === 'number'
+                ? nft.account.messageCount
+                : nft.account.messageCount.toNumber(),
+            bump: nft.account.bump,
+        }));
+    } catch (error) {
+        console.error('Error fetching preminted NFTs:', error);
+        return [];
+    }
+};
+
+export const setExternalComputeMint = async (
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    externalComputeMint: PublicKey
+): Promise<{ txId: string }> => {
+    if (!program) throw new Error('Program not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet not connected');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
+
+    try {
+        // Find necessary PDAs
+        const [appAinftPda] = findAppAinftPDA();
+
+        // Create the instruction
+        const ix = await program.methods
+            .setExternalComputeMint()
+            .accounts({
+                aiNft: appAinftPda,
+                externalComputeMint: externalComputeMint,
+                authority: wallet.publicKey,
+                tokenProgram: splToken.TOKEN_PROGRAM_ID,
+                systemProgram: web3.SystemProgram.programId,
+            })
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+
+        // Send and confirm transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+        });
+
+        console.log('External compute mint set with transaction:', signature);
+
+        return {
+            txId: signature,
+        };
+    } catch (error) {
+        console.error('Error setting external compute mint:', error);
+        throw error;
+    }
+};
+
+export const fetchCharacterConfigs = async (
+    program: Program<Ainft>,
+    connection: Connection,
+    authority?: PublicKey
+) => {
+    try {
+        let configs;
+
+        if (authority) {
+            // Fetch configs for a specific authority
+            configs = await program.account.characterConfig.all([
+                {
+                    memcmp: {
+                        offset: 8, // Skip discriminator
+                        bytes: authority.toBase58()
+                    }
+                }
+            ]);
+        } else {
+            // Fetch all configs
+            configs = await program.account.characterConfig.all();
+        }
+
+        return configs.map(config => {
+            // Helper function to convert byte array to string
+            const byteArrayToString = (byteArray) => {
+                return String.fromCharCode(...byteArray.filter(b => b !== 0));
+            };
+
+            // Process string arrays
+            const processStringArray = (byteArrays) => {
+                return byteArrays
+                    .map(byteArray => byteArrayToString(byteArray))
+                    .filter(str => str.length > 0);
+            };
+
+            return {
+                publicKey: config.publicKey,
+                name: byteArrayToString(config.account.name),
+                clients: processStringArray(config.account.clients),
+                modelProvider: byteArrayToString(config.account.modelProvider),
+                settings: {
+                    voice: {
+                        model: byteArrayToString(config.account.settings.voice.model)
+                    }
+                },
+                bio: processStringArray(config.account.bio),
+                lore: processStringArray(config.account.lore),
+                knowledge: processStringArray(config.account.knowledge),
+                topics: processStringArray(config.account.topics),
+                style: {
+                    all: config.account.style.all.map(byteArrayToString).filter(str => str.length > 0),
+                    chat: config.account.style.chat.map(byteArrayToString).filter(str => str.length > 0),
+                    post: config.account.style.post.map(byteArrayToString).filter(str => str.length > 0),
+                },
+                adjectives: processStringArray(config.account.adjectives),
+                authority: config.account.authority,
+                bump: config.account.bump,
+            };
+        });
+    } catch (error) {
+        console.error('Error fetching character configs:', error);
+        return [];
+    }
+};
+
+export const finalizePreminting = async (
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    collectionName: string
+): Promise<{ txId: string }> => {
+    if (!program) throw new Error('Program not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet not connected');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
+
+    try {
+        // Find necessary PDAs
+        const [collection] = findCollectionPDA(wallet.publicKey, collectionName);
+
+        // Create the instruction
+        const ix = await program.methods
+            .finalizePreminting(collectionName)
+            .accounts({
+                collection,
+                authority: wallet.publicKey,
+                tokenProgram: splToken.TOKEN_PROGRAM_ID,
+                systemProgram: web3.SystemProgram.programId,
+            })
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+
+        // Send and confirm transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+
+        await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+        });
+
+        console.log('Preminting finalized with transaction:', signature);
+
+        return {
+            txId: signature
+        };
+    } catch (error) {
+        console.error('Error finalizing preminting:', error);
+        throw error;
+    }
+};
+
+export const updateCollection = async (
+    program: Program<Ainft>,
+    wallet: WalletContextState,
+    connection: Connection,
+    collectionName: string,
+    updates: {
+        newName?: string;
+        newUri?: string;
+        newDescription?: string;
+        newMintPrice?: number;
+        newStartMintDate?: number;
+        newEndMintDate?: number;
+    }
+): Promise<{ txId: string }> => {
+    if (!program) throw new Error('Program not initialized');
+    if (!wallet.publicKey) throw new Error('Wallet not connected');
+    if (!wallet.signTransaction) throw new Error('Wallet does not support signing transactions');
+
+    try {
+        // Find necessary PDAs
+        const [collection] = findCollectionPDA(wallet.publicKey, collectionName);
+        console.log('Update collection', collection);
+        console.log('Update collection name', updates.newName);
+        console.log('Update collection uri', updates.newUri);
+        console.log('Update collection description', updates.newDescription);
+        console.log('Update collection mint price', updates.newMintPrice);
+        console.log('Update collection start mint date', updates.newStartMintDate);
+        console.log('Update collection end mint date', updates.newEndMintDate);
+        // Create the instruction
+        const ix = await program.methods
+            .updateCollection(
+                collectionName,
+                updates.newName ? updates.newName : null,
+                updates.newUri ? updates.newUri : null,
+                updates.newDescription ? updates.newDescription : null,
+                updates.newMintPrice ? new BN(updates.newMintPrice) : null,
+                updates.newStartMintDate ? new BN(updates.newStartMintDate) : null,
+                updates.newEndMintDate ? new BN(updates.newEndMintDate) : null
+            )
+            .accounts({
+                collection,
+                authority: wallet.publicKey,
+                systemProgram: web3.SystemProgram.programId,
+            })
+            .instruction();
+
+        // Get the latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create a versioned transaction
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [ix]
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        const signedTransaction = await wallet.signTransaction(transaction);
+
+        // Send and confirm transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        await connection.confirmTransaction({
+            signature,
+            blockhash,
+            lastValidBlockHeight
+        });
+
+        console.log('Collection updated with transaction:', signature);
+
+        return {
+            txId: signature
+        };
+    } catch (error) {
+        console.error('Error updating collection:', error);
         throw error;
     }
 };

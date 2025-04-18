@@ -22,10 +22,12 @@ import {
 
 const navItems = [
     { name: 'Home', href: '/' },
-    { name: 'Mint AI', href: '/mint' },
+    { name: 'Collections', href: '/create-collection' },
+    { name: 'Manage\nCollections', href: '/manage-collections' },
+    { name: 'Browse\nNFTs', href: '/browse-nfts' },
+    { name: 'Character\nConfig', href: '/create-character-config' },
     { name: 'Chat', href: '/chat' },
-    { name: 'Manage', href: '/manage' },
-    { name: 'Execution Client', href: '/execution-client' },
+    { name: 'Execution\nClient', href: '/execution-client' },
 ];
 
 // Define network configuration with colors and proper typing
@@ -55,9 +57,9 @@ const networkConfig: Record<Network, { name: string; color: string }> = {
 export default function Header() {
     const pathname = usePathname();
     const { network: selectedNetwork, setNetwork, connection } = useNetworkStore();
-    const { 
-        balance: computeBalance, 
-        isLoading: isLoadingBalance, 
+    const {
+        balance: computeBalance,
+        isLoading: isLoadingBalance,
         fetchBalance: fetchComputeBalance,
         lastUpdated: balanceLastUpdated
     } = useComputeBalanceStore();
@@ -75,7 +77,7 @@ export default function Header() {
 
     // Format balance for display
     const formatBalance = (balance: number): string => {
-        return balance.toLocaleString(undefined, { 
+        return balance.toLocaleString(undefined, {
             minimumFractionDigits: 0,
             maximumFractionDigits: 2
         });
@@ -86,14 +88,14 @@ export default function Header() {
         if (wallet.connected && wallet.publicKey && connection) {
             console.log('Fetching compute balance due to wallet/connection/network change');
             fetchComputeBalance(connection, wallet.publicKey);
-            
+
             // Set up an interval to refresh the balance every 30 seconds
             const intervalId = setInterval(() => {
                 if (wallet.connected && wallet.publicKey && connection) {
                     fetchComputeBalance(connection, wallet.publicKey);
                 }
             }, 30000);
-            
+
             return () => clearInterval(intervalId);
         }
     }, [wallet.connected, wallet.publicKey, connection, selectedNetwork, fetchComputeBalance]);
@@ -115,12 +117,12 @@ export default function Header() {
             setNetwork(network);
             // Show toast notification when network changes
             addToast(`Network changed to ${networkConfig[network].name}`, 'info');
-            
+
             // Refetch compute balance when network changes
             if (wallet.connected && wallet.publicKey && connection) {
                 fetchComputeBalance(connection, wallet.publicKey);
             }
-            
+
             // Simulate network switching delay
             await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
@@ -201,7 +203,7 @@ export default function Header() {
                                     <Link
                                         href={item.href}
                                         className={cn(
-                                            'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                                            'px-3 py-2 rounded-md text-sm font-medium transition-colors whitespace-pre-line text-left block min-w-[80px]',
                                             pathname === item.href
                                                 ? 'bg-sky-800 text-white'
                                                 : 'text-gray-300 hover:bg-gray-800 hover:text-white'
@@ -216,8 +218,8 @@ export default function Header() {
                         {/* Network Selector Dropdown */}
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button 
-                                    variant="outline" 
+                                <Button
+                                    variant="outline"
                                     className={cn(
                                         "ml-2 text-sm border-gray-700 bg-gray-900/50 hover:bg-gray-800",
                                         networkSwitching && "opacity-50 cursor-not-allowed"
@@ -274,7 +276,7 @@ export default function Header() {
                                         {formatBalance(computeBalance)}
                                     </span>
                                 ) : (
-                                    <span 
+                                    <span
                                         className="text-sm text-yellow-400 font-medium"
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -342,7 +344,7 @@ export default function Header() {
                                     key={item.name}
                                     href={item.href}
                                     className={cn(
-                                        'block px-3 py-2 rounded-md text-base font-medium',
+                                        'block px-3 py-2 rounded-md text-base font-medium whitespace-pre-line text-left',
                                         pathname === item.href
                                             ? 'bg-sky-800 text-white'
                                             : 'text-gray-300 hover:bg-gray-800 hover:text-white'

@@ -10,6 +10,7 @@ import { motion } from 'framer-motion';
 import { cn } from '../components/ui/utils';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { getExplorerUrl, getExplorerName } from '../utils/explorer';
 
 export default function MintPage() {
     const wallet = useWallet();
@@ -184,12 +185,12 @@ export default function MintPage() {
                                     <p>
                                         <span className="font-semibold">Transaction:</span>{' '}
                                         <a
-                                            href={`https://explorer.solana.com/tx/${txHash}?cluster=${network}`}
+                                            href={getExplorerUrl('tx', txHash, network)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-blue-400 hover:underline"
                                         >
-                                            View on Solana Explorer
+                                            View on {getExplorerName(network)} Explorer
                                         </a>
                                     </p>
                                     <p className="mt-4">

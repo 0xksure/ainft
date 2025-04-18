@@ -107,3 +107,24 @@ pub struct NFTPreminted {
     pub authority: Pubkey,
     pub price: u64,
 }
+
+#[event]
+pub struct PremintingFinalized {
+    pub collection: Pubkey,
+    pub authority: Pubkey,
+    pub total_minted: u64,
+}
+
+#[event]
+pub struct CollectionUpdated {
+    pub collection: Pubkey,
+    pub authority: Pubkey,
+}
+
+#[event]
+pub struct CollectionWhitelistUpdated {
+    pub collection: Pubkey,
+    pub authority: Pubkey,
+    pub wallet: Pubkey,
+    pub action: u8, // 0: add, 1: remove, 2: clear all
+}

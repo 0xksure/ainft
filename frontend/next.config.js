@@ -14,6 +14,10 @@ const nextConfig = {
       'placehold.co', // Allow Placehold.co
       'placekitten.com', // Allow Placekitten
       'via.placeholder.com', // Allow Placeholder.com
+      'en.wikipedia.org', // Allow Wikipedia
+      'upload.wikimedia.org', // Allow Wikimedia Commons
+      'www.wikipedia.org', // Allow Wikipedia
+      'example.com', // Allow example.com
     ],
   },
 };

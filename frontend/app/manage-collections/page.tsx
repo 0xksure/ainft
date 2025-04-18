@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useNetworkStore } from '../stores/networkStore';
-import { useAnchorProgram, getCreatorCollections, premintNft } from '../utils/anchor';
+import { useAnchorProgram, fetchCollections, premintNft } from '../utils/anchor';
 import PageLayout from '../components/PageLayout';
 import CopyableAddress from '../components/CopyableAddress';
 import { motion } from 'framer-motion';
@@ -12,16 +12,25 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { PublicKey } from '@solana/web3.js';
+import { getExplorerUrl, getExplorerName } from '../utils/explorer';
 
 type Collection = {
-  address: PublicKey;
+  address?: PublicKey;
+  publicKey: PublicKey;  // This is the primary key in the returned collections
+  authority: PublicKey;
   name: string;
   symbol: string;
   uri: string;
-  mintPrice: number;
-  totalSupply: number;
-  mintCount: number;
-  authority: PublicKey;
+  mint: PublicKey;
+  description?: string;
+  mintPrice: any; // Using any for BN type
+  totalSupply?: any; // Using any for BN type, optional now
+  maxSupply?: any; // Optional alternative to totalSupply
+  mintCount: any; // Using any for BN type
+  royaltyBasisPoints: number;
+  startMintDate?: any; // New field
+  endMintDate?: any; // New field
+  bump?: any;
 };
 
 export default function ManageCollectionsPage() {
@@ -31,12 +40,12 @@ export default function ManageCollectionsPage() {
 
   const { program, loading: programLoading, error: programError } = useAnchorProgram();
   const [isClient, setIsClient] = useState(false);
-  
+
   // Collections state
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loadingCollections, setLoadingCollections] = useState(false);
   const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
-  
+
   // Premint NFT form state
   const [nftName, setNftName] = useState('');
   const [nftUri, setNftUri] = useState('');
@@ -60,12 +69,47 @@ export default function ManageCollectionsPage() {
   }, [isClient, wallet.publicKey, program, programLoading]);
 
   const loadCollections = async () => {
-    if (!program || !wallet.publicKey) return;
-    
+    if (!program || !wallet.publicKey || !connection) return;
+
     try {
       setLoadingCollections(true);
-      const collections = await getCreatorCollections(program, wallet.publicKey);
-      setCollections(collections);
+      const fetchedCollections = await fetchCollections(program, connection, wallet.publicKey);
+
+      // Safely map the returned collections to match our Collection type
+      const mappedCollections = fetchedCollections.map(collection => {
+        // Use type assertion to avoid property access errors
+        const collectionAny = collection as any;
+
+        // Safe conversion function with fallback
+        const safeToNumber = (bnValue: any) => {
+          try {
+            return bnValue && typeof bnValue.toNumber === 'function' ? bnValue.toNumber() : 0;
+          } catch (err) {
+            console.warn('Error converting BN to number:', err);
+            return 0;
+          }
+        };
+
+        // Safely extract all properties with fallbacks
+        return {
+          publicKey: collection.publicKey,
+          address: collection.publicKey, // For backward compatibility
+          authority: collection.authority,
+          name: collection.name || 'Unnamed Collection',
+          symbol: collection.symbol || '',
+          uri: collection.uri || '',
+          mint: collection.mint,
+          description: collectionAny.description || '',
+          royaltyBasisPoints: collection.royaltyBasisPoints || 0,
+          mintPrice: safeToNumber(collection.mintPrice),
+          mintCount: safeToNumber(collection.mintCount),
+          totalSupply: safeToNumber(collectionAny.totalSupply || collectionAny.maxSupply),
+          startMintDate: safeToNumber(collectionAny.startMintDate),
+          endMintDate: safeToNumber(collectionAny.endMintDate)
+        };
+      });
+
+      setCollections(mappedCollections);
     } catch (err) {
       console.error('Error loading collections:', err);
       setError(err instanceof Error ? err.message : 'Failed to load collections');
@@ -103,8 +147,8 @@ export default function ManageCollectionsPage() {
   const handlePremintSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!program || !wallet.publicKey || !selectedCollection) {
-      setError("Program, wallet, or collection not available");
+    if (!program || !wallet.publicKey || !selectedCollection || !connection) {
+      setError("Program, wallet, connection, or collection not available");
       return;
     }
 
@@ -117,15 +161,15 @@ export default function ManageCollectionsPage() {
         program,
         wallet,
         connection,
-        selectedCollection.address,
-        nftName,
-        nftUri,
-        selectedCollection.name,
-        selectedCollection.mintPrice
+        selectedCollection.name, // Collection name as string
+        nftName, // NFT name
+        nftUri, // NFT URI
+        selectedCollection.mintPrice, // Price (number)
+        undefined // No character config ID
       );
 
       setPremintTxHash(result.txId);
-      setPremintedNftAddress(result.nftMint.toString());
+      setPremintedNftAddress(result.nftMintAddress.toString());
 
       // Reset form
       setNftName('');
@@ -203,12 +247,12 @@ export default function ManageCollectionsPage() {
                   <p>
                     <span className="font-semibold">Transaction:</span>{' '}
                     <a
-                      href={`https://explorer.solana.com/tx/${premintTxHash}?cluster=${network}`}
+                      href={getExplorerUrl('tx', premintTxHash, network)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-blue-400 hover:underline"
                     >
-                      View on Solana Explorer
+                      View on {getExplorerName(network)} Explorer
                     </a>
                   </p>
                 </div>
@@ -236,25 +280,23 @@ export default function ManageCollectionsPage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {collections.map((collection, index) => (
-                    <div 
-                      key={collection.address.toString()} 
+                    <div
+                      key={collection.publicKey.toString()}
                       className={cn(
-                        "bg-gray-800 p-6 rounded-lg cursor-pointer transition-all",
-                        selectedCollection?.address.equals(collection.address) 
-                          ? "ring-2 ring-purple-500" 
-                          : "hover:bg-gray-700"
+                        "bg-gray-800 p-6 rounded-lg cursor-pointer transition-all hover:bg-gray-700 hover:shadow-lg hover:translate-y-[-4px]",
+                        "border border-gray-700 hover:border-purple-500"
                       )}
-                      onClick={() => setSelectedCollection(collection)}
+                      onClick={() => router.push(`/manage-collections/${collection.publicKey.toString()}`)}
                     >
                       <div className="aspect-square bg-gray-700 rounded-lg mb-4 relative overflow-hidden">
-                        <Image
+                        <img
                           src={collection.uri}
                           alt={collection.name}
-                          fill
-                          style={{ objectFit: 'cover' }}
+                          className="absolute inset-0 w-full h-full object-cover"
                           onError={(e) => {
                             // Fallback for image error
-                            e.currentTarget.src = "/placeholder-collection.png";
+                            const target = e.currentTarget as HTMLImageElement;
+                            target.src = "/placeholder-collection.png";
                           }}
                         />
                       </div>
@@ -262,106 +304,38 @@ export default function ManageCollectionsPage() {
                       <div className="space-y-1 text-sm text-gray-300">
                         <p>Symbol: {collection.symbol}</p>
                         <p>Mint Price: {collection.mintPrice / 1_000_000_000} SOL</p>
-                        <p>Supply: {collection.mintCount} / {collection.totalSupply}</p>
+                        <p className="flex items-center">
+                          <span className="inline-block mr-2">
+                            Supply: {collection.mintCount} {collection.totalSupply > 0 ? `/ ${collection.totalSupply}` : '(Unlimited)'}
+                          </span>
+                          {collection.mintCount > 0 && (
+                            <span className="text-xs inline-flex items-center bg-purple-900/50 px-2 py-1 rounded-full">
+                              {collection.mintCount} preminted
+                            </span>
+                          )}
+                        </p>
+                        {collection.startMintDate > 0 && (
+                          <p>Start Date: {new Date(collection.startMintDate * 1000).toLocaleString()}</p>
+                        )}
+                        {collection.endMintDate > 0 && (
+                          <p>End Date: {new Date(collection.endMintDate * 1000).toLocaleString()}</p>
+                        )}
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-gray-700 flex justify-end">
+                        <button
+                          className="text-sm text-blue-400 hover:text-blue-300 flex items-center transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation(); // Prevent triggering the parent div's onClick
+                            router.push(`/manage-collections/${collection.publicKey.toString()}`);
+                          }}
+                        >
+                          Manage NFTs <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                          </svg>
+                        </button>
                       </div>
                     </div>
                   ))}
-                </div>
-              )}
-
-              {/* Premint Form (only shown when a collection is selected) */}
-              {selectedCollection && (
-                <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="bg-gray-800 p-6 rounded-lg">
-                    <h2 className="text-2xl font-semibold mb-4">Premint NFT for {selectedCollection.name}</h2>
-                    <p className="text-gray-400 mb-6">
-                      Premint NFTs for your collection that users can purchase and customize.
-                    </p>
-                    <form className="space-y-6" onSubmit={handlePremintSubmit}>
-                      <div>
-                        <label className="block mb-2">NFT Name</label>
-                        <input
-                          type="text"
-                          value={nftName}
-                          onChange={(e) => setNftName(e.target.value)}
-                          className="w-full p-3 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                          placeholder="Enter a name for this NFT"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block mb-2">NFT Image URL</label>
-                        <input
-                          type="text"
-                          value={nftUri}
-                          onChange={handleUrlChange}
-                          className="w-full p-3 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                          placeholder="https://example.com/your-nft-image"
-                          required
-                        />
-                        <p className="text-sm text-gray-400 mt-1">
-                          Enter the URL for this NFT's image
-                        </p>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={isPreminting}
-                        className={cn(
-                          "w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-blue-600 rounded font-medium transition-all",
-                          isPreminting ? "opacity-70 cursor-not-allowed" : "hover:from-purple-700 hover:to-blue-700"
-                        )}
-                      >
-                        {isPreminting ? "Preminting NFT..." : "Premint NFT"}
-                      </button>
-                    </form>
-                  </div>
-
-                  {/* Preview */}
-                  <div className="bg-gray-800 p-6 rounded-lg">
-                    <h2 className="text-2xl font-semibold mb-4">Preview</h2>
-                    <div className="aspect-square bg-gray-700 rounded-lg mb-6 flex items-center justify-center overflow-hidden">
-                      {previewUrl ? (
-                        <div className="relative w-full h-full">
-                          {!imageError ? (
-                            <Image
-                              src={previewUrl}
-                              alt={nftName || "NFT Image"}
-                              fill
-                              style={{ objectFit: 'cover' }}
-                              onError={handleImageError}
-                            />
-                          ) : (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-                              <p className="text-gray-400 mb-2">URL entered but image couldn't be displayed</p>
-                              <div className="bg-gray-900 p-3 rounded-md w-full max-w-xs overflow-hidden">
-                                <p className="text-xs text-gray-400 truncate">{previewUrl}</p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="text-center p-8">
-                          <p className="text-gray-400">Enter a valid URL to see a preview</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-4">
-                      <div className="p-4 bg-blue-900/30 rounded-lg">
-                        <h3 className="font-semibold mb-2">About Preminting</h3>
-                        <p className="text-sm text-gray-300">
-                          Preminting allows you to create NFTs in advance that users can purchase.
-                          Each NFT can be customized with different AI character settings by its owner.
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="font-semibold">Collection: {selectedCollection.name}</p>
-                        <p className="font-semibold">Mint Price: {selectedCollection.mintPrice / 1_000_000_000} SOL</p>
-                        <p className="font-semibold">Preminted: {selectedCollection.mintCount} / {selectedCollection.totalSupply}</p>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>

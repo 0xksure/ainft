@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
+use crate::error::AiNftError;
 use crate::events::AiNftMinted;
 use crate::state::{AINFTCollection, AiCharacterNFT, AiNft};
 
@@ -26,7 +27,11 @@ pub struct PurchasePremintedNft<'info> {
     )]
     pub ai_character: AccountLoader<'info, AiCharacterNFT>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = collection.is_mint_active(Clock::get().unwrap().unix_timestamp) @ AiNftError::MintNotActive,
+        constraint = collection.is_whitelisted(&buyer.key()) @ AiNftError::NotWhitelisted,
+    )]
     pub collection: Box<Account<'info, AINFTCollection>>,
 
     // The NFT mint that was preminted

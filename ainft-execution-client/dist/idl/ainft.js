@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AINFT_IDL = exports.AINFT_PROGRAM_ID = void 0;
 const web3_js_1 = require("@solana/web3.js");
-exports.AINFT_PROGRAM_ID = new web3_js_1.PublicKey('3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD');
+exports.AINFT_PROGRAM_ID = new web3_js_1.PublicKey('ArLePiNppazCKH1obDtf6BVUaid7h5YxEpP4UGpjMqo5');
 exports.AINFT_IDL = {
     "version": "0.1.0",
     "name": "ainft",

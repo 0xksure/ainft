@@ -14,7 +14,7 @@ start-local:
     solana-test-validator -r --bpf-program metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s ./tests/metaplex_token_metadata_program.so
 # Initialize the program by running the setup scripts
 init: 
-    cd sdk-ts && source .env.example && pnpm run create-app && pnpm run create-compute-mint && pnpm run mint-compute 10000000000 ${WALLET_ADDRESS} 
+    cd sdk-ts && source .env.example && pnpm run create-app && pnpm run create-compute-mint 
 
 mint-compute:
     cd sdk-ts && source .env.example && pnpm run mint-compute 10000000000 ${WALLET_ADDRESS} 

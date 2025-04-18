@@ -3,7 +3,7 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-ainft = "3R1GZLu9iJHwLLvfwBXfWWW6s8tLsLcgSJCckwrnGQLD"
+ainft = "ArLePiNppazCKH1obDtf6BVUaid7h5YxEpP4UGpjMqo5"
 
 [registry]
 url = "https://api.apr.dev"

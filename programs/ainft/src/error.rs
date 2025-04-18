@@ -90,4 +90,14 @@ pub enum AiNftError {
     Overflow,
     #[msg("Invalid character config")]
     InvalidCharacterConfig,
+    #[msg("Preminting has been finalized")]
+    PremintingFinalized,
+    #[msg("Invalid mint dates. Start date must be before end date")]
+    InvalidMintDates,
+    #[msg("Minting is not active for this collection")]
+    MintNotActive,
+    #[msg("Wallet not whitelisted for this collection")]
+    NotWhitelisted,
+    #[msg("Whitelist is full, cannot add more wallets")]
+    WhitelistFull,
 }

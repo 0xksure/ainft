@@ -11,6 +11,7 @@ import { cn } from '../components/ui/utils';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
+import { getExplorerUrl, getExplorerName } from '../utils/explorer';
 
 export default function CreateCollectionPage() {
     const wallet = useWallet();
@@ -22,12 +23,13 @@ export default function CreateCollectionPage() {
 
     // Form state
     const [name, setName] = useState('');
-    const [symbol, setSymbol] = useState('');
+    const [description, setDescription] = useState('');
     const [uri, setUri] = useState('');
     const [previewUrl, setPreviewUrl] = useState('');
     const [royaltyBasisPoints, setRoyaltyBasisPoints] = useState(500); // 5% default
     const [mintPrice, setMintPrice] = useState(0.1); // SOL
-    const [totalSupply, setTotalSupply] = useState(100);
+    const [startMintDate, setStartMintDate] = useState(0); // 0 means start immediately
+    const [endMintDate, setEndMintDate] = useState(0); // 0 means no end date
 
     // Transaction state
     const [isCreating, setIsCreating] = useState(false);
@@ -37,35 +39,76 @@ export default function CreateCollectionPage() {
 
     // Image error state
     const [imageError, setImageError] = useState(false);
+    const [isValidatingImage, setIsValidatingImage] = useState(false);
+    const [invalidImageMsg, setInvalidImageMsg] = useState<string | null>(null);
 
     // Set isClient to true when component mounts (client-side only)
+    // and get collection name from URL if present
     useEffect(() => {
         setIsClient(true);
+
+        // Get collection name from URL query parameter
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const nameParam = params.get('name');
+
+            if (nameParam) {
+                setName(decodeURIComponent(nameParam));
+
+                // Set description instead of using symbol
+                const autoDescription = `Collection of AI NFTs: ${nameParam}`;
+                setDescription(autoDescription);
+            }
+        }
     }, []);
 
     // Handle URL input and validation
     const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setUri(value);
+        setInvalidImageMsg(null);
+        setImageError(false);
 
         // Basic URL validation
         try {
             if (value) {
                 new URL(value);
                 setPreviewUrl(value);
-                setImageError(false); // Reset image error state
+                validateImageUrl(value);
             } else {
                 setPreviewUrl('');
             }
         } catch (err) {
             setPreviewUrl('');
+            setInvalidImageMsg('Invalid URL format');
         }
+    };
+
+    // Validate if the URL is a valid image
+    const validateImageUrl = (url: string) => {
+        setIsValidatingImage(true);
+        setImageError(false);
+
+        // Create a new Image object to test loading
+        const img = new (window.Image as any)();
+        img.onload = () => {
+            setIsValidatingImage(false);
+            setImageError(false);
+            setInvalidImageMsg(null);
+        };
+        img.onerror = () => {
+            setIsValidatingImage(false);
+            setImageError(true);
+            setInvalidImageMsg('Unable to load image from this URL');
+        };
+        img.src = url;
     };
 
     // Image error handler
     const handleImageError = () => {
         console.log('Image failed to load:', previewUrl);
         setImageError(true);
+        setInvalidImageMsg('Unable to load image from this URL');
     };
 
     // Handle form submission
@@ -74,6 +117,11 @@ export default function CreateCollectionPage() {
 
         if (!program || !wallet.publicKey) {
             setError("Program or wallet not connected");
+            return;
+        }
+
+        if (!connection) {
+            setError("Connection not available");
             return;
         }
 
@@ -86,15 +134,16 @@ export default function CreateCollectionPage() {
 
             // Create AI NFT Collection
             const result = await createAiNftCollection(
-                program, 
-                wallet, 
-                connection, 
+                program,
+                wallet,
+                connection,
                 name,
-                symbol,
                 uri,
+                description,
                 royaltyBasisPoints,
                 mintPriceLamports,
-                totalSupply
+                startMintDate,
+                endMintDate
             );
 
             setTxHash(result.txId);
@@ -102,12 +151,13 @@ export default function CreateCollectionPage() {
 
             // Reset form
             setName('');
-            setSymbol('');
+            setDescription('');
             setUri('');
             setPreviewUrl('');
             setRoyaltyBasisPoints(500);
             setMintPrice(0.1);
-            setTotalSupply(100);
+            setStartMintDate(0);
+            setEndMintDate(0);
 
             // Redirect to manage collections page after a short delay
             setTimeout(() => {
@@ -174,12 +224,12 @@ export default function CreateCollectionPage() {
                                     <p>
                                         <span className="font-semibold">Transaction:</span>{' '}
                                         <a
-                                            href={`https://explorer.solana.com/tx/${txHash}?cluster=${network}`}
+                                            href={getExplorerUrl('tx', txHash, network)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-blue-400 hover:underline"
                                         >
-                                            View on Solana Explorer
+                                            View on {getExplorerName(network)} Explorer
                                         </a>
                                     </p>
                                     <p className="mt-4">
@@ -216,15 +266,14 @@ export default function CreateCollectionPage() {
                                     </div>
 
                                     <div>
-                                        <label className="block mb-2">Collection Symbol</label>
-                                        <input
-                                            type="text"
-                                            value={symbol}
-                                            onChange={(e) => setSymbol(e.target.value)}
+                                        <label className="block mb-2">Collection Description</label>
+                                        <textarea
+                                            value={description}
+                                            onChange={(e) => setDescription(e.target.value)}
                                             className="w-full p-3 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                            placeholder="Symbol (e.g., AINFT)"
+                                            placeholder="Enter a description for your collection"
                                             required
-                                            maxLength={10}
+                                            rows={3}
                                         />
                                     </div>
 
@@ -234,13 +283,24 @@ export default function CreateCollectionPage() {
                                             type="text"
                                             value={uri}
                                             onChange={handleUrlChange}
-                                            className="w-full p-3 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                            className={cn(
+                                                "w-full p-3 rounded border focus:ring-1",
+                                                invalidImageMsg
+                                                    ? "bg-red-900/30 border-red-600 focus:border-red-500 focus:ring-red-500"
+                                                    : "bg-gray-700 border-gray-600 focus:border-blue-500 focus:ring-blue-500"
+                                            )}
                                             placeholder="https://example.com/your-collection-image"
                                             required
                                         />
-                                        <p className="text-sm text-gray-400 mt-1">
-                                            Enter the URL for your collection's image
-                                        </p>
+                                        {invalidImageMsg ? (
+                                            <p className="text-sm text-red-400 mt-1">
+                                                {invalidImageMsg}
+                                            </p>
+                                        ) : (
+                                            <p className="text-sm text-gray-400 mt-1">
+                                                Enter the URL for your collection's image
+                                            </p>
+                                        )}
                                     </div>
 
                                     <div>
@@ -275,20 +335,6 @@ export default function CreateCollectionPage() {
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className="block mb-2">Total Supply</label>
-                                        <input
-                                            type="number"
-                                            value={totalSupply}
-                                            onChange={(e) => setTotalSupply(parseInt(e.target.value))}
-                                            className="w-full p-3 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                            placeholder="Total number of NFTs in collection"
-                                            required
-                                            min="1"
-                                            step="1"
-                                        />
-                                    </div>
-
                                     <button
                                         type="submit"
                                         disabled={isCreating}
@@ -308,17 +354,23 @@ export default function CreateCollectionPage() {
                                 <div className="aspect-square bg-gray-700 rounded-lg mb-6 flex items-center justify-center overflow-hidden">
                                     {previewUrl ? (
                                         <div className="relative w-full h-full">
-                                            {!imageError ? (
-                                                <Image
-                                                    src={previewUrl}
-                                                    alt={name || "Collection Image"}
-                                                    fill
-                                                    style={{ objectFit: 'cover' }}
-                                                    onError={handleImageError}
-                                                />
+                                            {isValidatingImage ? (
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+                                                    <p className="mt-4 text-gray-400">Validating image...</p>
+                                                </div>
+                                            ) : !imageError ? (
+                                                <div className="w-full h-full relative">
+                                                    <img
+                                                        src={previewUrl}
+                                                        alt={name || "Collection Image"}
+                                                        className="absolute inset-0 w-full h-full object-cover"
+                                                        onError={handleImageError}
+                                                    />
+                                                </div>
                                             ) : (
                                                 <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-                                                    <p className="text-gray-400 mb-2">URL entered but image couldn't be displayed</p>
+                                                    <p className="text-red-400 mb-2">{invalidImageMsg || 'Image could not be displayed'}</p>
                                                     <div className="bg-gray-900 p-3 rounded-md w-full max-w-xs overflow-hidden">
                                                         <p className="text-xs text-gray-400 truncate">{previewUrl}</p>
                                                     </div>
@@ -327,7 +379,7 @@ export default function CreateCollectionPage() {
                                         </div>
                                     ) : (
                                         <div className="text-center p-8">
-                                            <p className="text-gray-400">Enter a valid URL to see a preview</p>
+                                            <p className="text-gray-400">Enter a valid image URL to see a preview</p>
                                         </div>
                                     )}
                                 </div>

@@ -1,8 +1,7 @@
-import { Keypair, PublicKey, sendAndConfirmTransaction, Transaction } from '@solana/web3.js';
-import { getProgram, findMasterMintPDA, findAppAinftPDA, findMetadataPDA } from '../utils';
+import { Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+import { getProgram, findAppAinftPDA } from '../utils';
 import { Logger } from '../utils/logger';
 import { BN } from '@coral-xyz/anchor';
-import { associatedAddress } from '@coral-xyz/anchor/dist/cjs/utils/token';
 
 async function main() {
     Logger.info('Starting AI NFT App initialization...');
@@ -20,55 +19,64 @@ async function main() {
             Buffer.from(JSON.parse(require('fs').readFileSync(process.env.PAYER_KEYPAIR_PATH, 'utf-8')))
         );
 
+        // Setup program and payer
         const payer = payerKeypair;
-        if (!payer) {
-            Logger.error('Failed to load keypair');
-            process.exit(1);
-        }
-        console.log("hello");
-        console.log(payer.publicKey.toBase58());
         const program = await getProgram();
 
+        Logger.info(`Using payer: ${payer.publicKey.toBase58()}`);
+
+        // Check payer balance
+        const balance = await program.provider.connection.getBalance(payer.publicKey);
+        if (balance < 0.1 * LAMPORTS_PER_SOL) {
+            Logger.warn(`Low balance: ${balance / LAMPORTS_PER_SOL} SOL. Consider airdropping more.`);
+        }
+
+        // Create a default execution client pubkey
+        Logger.startSpinner('Generating default execution client...');
+        const defaultExecutionClient = Keypair.generate().publicKey;
+        Logger.spinnerSuccess(`Default execution client: ${defaultExecutionClient.toBase58()}`);
+
+        // Derive app ainft PDA
         Logger.startSpinner('Deriving program addresses...');
         const [appAinftPda] = findAppAinftPDA();
-        const [masterMint] = findMasterMintPDA();
-        // get master_metadata account 
-        const [masterMetadata] = findMetadataPDA(masterMint);
-        // get token account for payer
-        const tokenAccount = await associatedAddress({ mint: masterMint, owner: payer.publicKey });
-        Logger.spinnerSuccess('Program addresses derived');
+        Logger.spinnerSuccess(`App PDA: ${appAinftPda.toBase58()}`);
 
-        Logger.printPDA('Master Mint', masterMint.toBase58());
-        Logger.printPDA('App PDA', appAinftPda.toBase58());
+        // Prepare parameters for app initialization
+        const createAiNftParams = {
+            name: "AI Agent Collection",
+            uri: "https://example.com/metadata.json",
+            symbol: "AIA",
+            defaultExecutionClient: defaultExecutionClient,
+            mintPrice: new BN(100),
+            maxSupply: new BN(100),
+            computeMint: PublicKey.default, // Set to default for external mint
+        };
 
+        // Create the AINFT App
         Logger.startSpinner('Creating AI NFT App...');
-        const ix = await program.methods
-            .createAppAinft({
-                name: 'AI NFT App',
-                uri: 'https://ai-nft-app.com',
-                symbol: 'AINFT',
-                defaultExecutionClient: PublicKey.default,
-                mintPrice: new BN(1),
-                maxSupply: new BN(10),
-            })
+        const tx = await program.methods
+            .createAppAinft(createAiNftParams)
             .accounts({
-                // @ts-ignore
-                aiNft: appAinftPda,
-                masterMint,
-                masterToken: tokenAccount,
-                masterMetadata: masterMetadata,
                 payer: payer.publicKey,
             })
             .signers([payer])
-            .instruction();
+            .rpc();
 
-        const tx = new Transaction().add(ix);
-        const txHash = await sendAndConfirmTransaction(program.provider.connection, tx, [payer]);
-        console.log(txHash);
-        Logger.spinnerSuccess('Successfully created AI NFT App!');
+        Logger.spinnerSuccess(`AI NFT App created successfully!`);
+        Logger.info(`Transaction: ${tx}`);
+
+        // Verify the AINFT app was created correctly
+        const ainftAccount = await program.account.aiNft.fetch(appAinftPda);
+        Logger.info('AINFT App Details:');
+        Logger.info(`- Authority: ${ainftAccount.authority.toBase58()}`);
+        Logger.info(`- Compute Mint: ${ainftAccount.computeMint.toBase58() === PublicKey.default.toBase58() ? 'Not set' : ainftAccount.computeMint.toBase58()}`);
+
         Logger.info('\nNext steps:');
-        Logger.info('1. Create the compute mint: pnpm create-compute-mint');
-        Logger.info('2. Mint compute tokens: pnpm mint-compute <amount>');
+        Logger.info('1. Create an external compute mint');
+        Logger.info('2. Set the external compute mint using `set-external-compute-mint` command');
+        Logger.info('3. Register an execution client for your AINFT');
+        Logger.info('4. Create a collection and premint NFTs');
+
     } catch (error: any) {
         Logger.spinnerError('Failed to create AI NFT App');
 

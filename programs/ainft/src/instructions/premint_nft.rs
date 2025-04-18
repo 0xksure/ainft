@@ -5,8 +5,9 @@ use anchor_spl::metadata::{self, CreateMetadataAccountsV3, Metadata};
 use anchor_spl::token::{self, Mint, MintTo, Token, TokenAccount};
 use std::mem::size_of;
 
+use crate::error::AiNftError;
 use crate::events::NFTPreminted;
-use crate::state::{AINFTCollection, AiCharacterNFT, AiNft, CharacterConfig};
+use crate::state::{AINFTCollection, AiCharacterNFT, AiNft};
 
 #[derive(Accounts)]
 #[instruction(name: String, uri: String, collection_name: String, price: u64)]
@@ -23,9 +24,10 @@ pub struct CreatePremintedNft<'info> {
         seeds = ["collection".as_bytes(), authority.key().as_ref(), collection_name.as_bytes()],
         bump,
         constraint = collection.authority == authority.key(),
-        constraint = collection.mint_count < collection.total_supply,
+        constraint = !collection.preminting_finalized @ AiNftError::PremintingFinalized,
+        constraint = collection.is_whitelisted(&authority.key()) @ AiNftError::NotWhitelisted,
     )]
-    pub collection: Account<'info, AINFTCollection>,
+    pub collection: Box<Account<'info, AINFTCollection>>,
 
     #[account(
         init,
@@ -122,26 +124,30 @@ pub fn create_preminted_nft_handler(
 
     // Create the metadata
     msg!("Creating metadata");
+
+    // Create data for metadata - create outside to avoid large stack
+    let data = DataV2 {
+        name: name.clone(),
+        symbol: "cool".to_string(),
+        uri: uri.clone(),
+        seller_fee_basis_points: 1000, // 10%
+        creators: Some(vec![Creator {
+            address: ctx.accounts.collection.authority,
+            verified: false,
+            share: 100,
+        }]),
+        collection: Some(Collection {
+            verified: false,
+            key: ctx.accounts.collection.mint,
+        }),
+        uses: None,
+    };
+
     metadata::create_metadata_accounts_v3(
         ctx.accounts
             .create_metadata_accounts_ctx()
             .with_signer(&[&seeds]),
-        DataV2 {
-            name: name.clone(),
-            symbol: "cool".to_string(),
-            uri: uri.clone(),
-            seller_fee_basis_points: 1000, // 10%
-            creators: Some(vec![Creator {
-                address: ctx.accounts.collection.authority,
-                verified: false,
-                share: 100,
-            }]),
-            collection: Some(Collection {
-                verified: false,
-                key: ctx.accounts.collection.mint,
-            }),
-            uses: None,
-        },
+        data,
         true,
         true,
         None,

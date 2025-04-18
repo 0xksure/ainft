@@ -15,9 +15,9 @@ import CopyableAddress from './CopyableAddress';
 const Navbar: FC = () => {
     const pathname = usePathname();
     const { network, setNetwork, connection } = useNetworkStore();
-    const { 
-        balance: computeBalance, 
-        isLoading: isLoadingBalance, 
+    const {
+        balance: computeBalance,
+        isLoading: isLoadingBalance,
         fetchBalance: fetchComputeBalance,
         error: balanceError
     } = useComputeBalanceStore();
@@ -29,7 +29,7 @@ const Navbar: FC = () => {
         const newNetwork = e.target.value as Network;
         setNetwork(newNetwork);
         addToast(`Network changed to ${newNetwork}`, 'info');
-        
+
         // Refetch balance when network changes
         if (wallet.connected && wallet.publicKey && connection) {
             fetchComputeBalance(connection, wallet.publicKey);
@@ -43,7 +43,7 @@ const Navbar: FC = () => {
 
     // Format balance for display
     const formatBalance = (balance: number): string => {
-        return balance.toLocaleString(undefined, { 
+        return balance.toLocaleString(undefined, {
             minimumFractionDigits: 0,
             maximumFractionDigits: 2
         });
@@ -81,6 +81,12 @@ const Navbar: FC = () => {
                                 <Link href="/manage" className={`${pathname === '/manage' ? 'bg-gray-800 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'} px-3 py-2 rounded-md text-sm font-medium`}>
                                     Manage
                                 </Link>
+                                <Link href="/compute-tokens" className={`${pathname === '/compute-tokens' ? 'bg-gray-800 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'} px-3 py-2 rounded-md text-sm font-medium`}>
+                                    Compute Tokens
+                                </Link>
+                                <Link href="/create-character-config" className={`${pathname === '/create-character-config' ? 'bg-gray-800 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'} px-3 py-2 rounded-md text-sm font-medium`}>
+                                    Character Config
+                                </Link>
                                 <Link href="/execution-client" className={`${pathname === '/execution-client' ? 'bg-gray-800 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'} px-3 py-2 rounded-md text-sm font-medium`}>
                                     Execution Client
                                 </Link>
@@ -101,7 +107,7 @@ const Navbar: FC = () => {
                                 <option value="localnet">Localnet</option>
                                 <option value="sonic-devnet">Sonic Devnet</option>
                             </select>
-                            
+
                             {/* Compute Token Balance */}
                             {wallet.connected && (
                                 <div
@@ -126,7 +132,7 @@ const Navbar: FC = () => {
                                             {formatBalance(computeBalance)}
                                         </span>
                                     ) : (
-                                        <span 
+                                        <span
                                             className="text-sm text-yellow-400 font-medium"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -141,7 +147,7 @@ const Navbar: FC = () => {
                                     )}
                                 </div>
                             )}
-                            
+
                             {/* Test Toast Button - Remove after debugging */}
                             <button
                                 className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md font-medium mr-4"
@@ -156,7 +162,7 @@ const Navbar: FC = () => {
                             >
                                 Test Notifications
                             </button>
-                            
+
                             {/* Debug Toggle Button */}
                             <button
                                 onClick={toggleDebug}
@@ -164,14 +170,14 @@ const Navbar: FC = () => {
                             >
                                 {showDebug ? 'Hide Debug' : 'Show Debug'}
                             </button>
-                            
+
                             {/* Wallet Button */}
                             <WalletMultiButton />
                         </div>
                     </div>
                 </div>
             </div>
-            
+
             {/* Debug Panel */}
             {showDebug && (
                 <div className="bg-black/90 text-white p-2 text-xs">

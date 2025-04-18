@@ -1,9 +1,17 @@
 import * as anchor from "@coral-xyz/anchor";
-import { BN, Program } from "@coral-xyz/anchor";
+import {
+  Program,
+  web3,
+  BN,
+  Address
+} from "@coral-xyz/anchor";
+import { Keypair, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { Ainft } from "../target/types/ainft";
-import { LAMPORTS_PER_SOL, PublicKey, Signer, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import * as spl from "@solana/spl-token"
+import {
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID
+} from "@solana/spl-token";
+import * as spl from "@solana/spl-token";
 import { assert } from "chai";
 import { findMasterMintPDA, findAppAinftPDA, findComputeMintPDA, findMetadataPDA, findAiCharacterMintPDA, findAiCharacterPDA, findCollectionPDA, findPremintedNftMintPDA, findCharacterConfigPDA } from "../sdk-ts/src/utils";
 import { before } from "mocha";
@@ -184,7 +192,6 @@ describe("ainft", async () => {
     const collectionUri = "https://example.com/collection.json";
     const royaltyBasisPoints = 500; // 5%
     const mintPrice = new BN(0.5 * LAMPORTS_PER_SOL); // 0.5 SOL
-    const totalSupply = new BN(100); // 100 NFTs in collection
 
     const [collection] = findCollectionPDA(payer.publicKey, collectionName);
     const [collectionMint] = PublicKey.findProgramAddressSync(
@@ -197,14 +204,22 @@ describe("ainft", async () => {
     await program.methods
       .createAinftCollection(
         collectionName,
-        collectionSymbol,
         collectionUri,
+        "A collection of AI assistants", // Collection description
         royaltyBasisPoints,
         mintPrice,
-        totalSupply
+        new BN(0), // start_mint_date (0 means start immediately)
+        new BN(0)  // end_mint_date (0 means no end date)
       )
       .accounts({
+        collection,
+        collectionMint,
+        collectionMetadata,
         authority: payer.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        metadataProgram: METADATA_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
       })
       .signers([payer])
       .rpc();
@@ -213,7 +228,9 @@ describe("ainft", async () => {
     // Verify collection was created
     const collectionAccount = await program.account.ainftCollection.fetch(collection);
     assert.equal(collectionAccount.name, collectionName, "Collection name mismatch");
+    assert.equal(collectionAccount.symbol, collectionSymbol, "Collection symbol mismatch");
     assert.equal(collectionAccount.mintCount.toString(), "0", "Collection mint count should be 0");
+    assert.equal(collectionAccount.mintPrice.toString(), mintPrice.toString(), "Collection mint price mismatch");
 
     // 2. Now premint an NFT in the collection
     const aiCharacterName = "AI Character #1";
@@ -625,13 +642,11 @@ describe("ainft", async () => {
     };
 
     // First, create a collection
-    console.log("Creating collection and minting AI character");
     const collectionName = "AI Assistants Collection";
     const collectionSymbol = "AIAC";
     const collectionUri = "https://example.com/collection.json";
     const royaltyBasisPoints = 500; // 5%
     const nftPrice = new BN(0.5 * LAMPORTS_PER_SOL); // 0.5 SOL
-    const totalSupply = new BN(100); // 100 NFTs in collection
 
     // Find collection PDA and related accounts
     const [collection] = findCollectionPDA(payer.publicKey, collectionName);
@@ -653,11 +668,12 @@ describe("ainft", async () => {
     await program.methods
       .createAinftCollection(
         collectionName,
-        collectionSymbol,
         collectionUri,
+        "A collection of AI assistants", // Collection description
         royaltyBasisPoints,
         nftPrice,
-        totalSupply
+        new BN(0), // start_mint_date (0 means start immediately)
+        new BN(0)  // end_mint_date (0 means no end date)
       )
       .accounts({
         collection,
@@ -700,7 +716,7 @@ describe("ainft", async () => {
         aiNftMetadata.uri,
         collectionName,
         nftPrice,
-        PublicKey.default // default execution client
+        null // default execution client
       )
       .accounts({
         aiNft: appAinftPda,
@@ -711,11 +727,6 @@ describe("ainft", async () => {
         characterConfig: PublicKey.default,
         collectionTokenAccount,
         authority: payer.publicKey,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        metadataProgram: METADATA_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       })
       .signers([payer])
       .rpc();
@@ -966,7 +977,7 @@ describe("ainft", async () => {
     // Verify message count increased
     const aiCharacterAccount = await program.account.aiCharacterNft.fetch(aiCharacter);
     assert.equal(aiCharacterAccount.messageCount.toString(), "1");
-    // check the account balances of the staker and the execution client
+    // check the account balances of the staker and the execution clien
 
     // calculate the expected fee share of the staker and the execution clien
 
@@ -1222,7 +1233,6 @@ describe("ainft", async () => {
     const collectionUri = "https://example.com/collection.json";
     const royaltyBasisPoints = 500; // 5%
     const mintPrice = new BN(1 * LAMPORTS_PER_SOL); // 1 SOL
-    const totalSupply = new BN(10); // 10 NFTs in collection
 
     const [collection] = findCollectionPDA(payer.publicKey, collectionName);
     const [collectionMint] = PublicKey.findProgramAddressSync(
@@ -1239,11 +1249,12 @@ describe("ainft", async () => {
     await program.methods
       .createAinftCollection(
         collectionName,
-        collectionSymbol,
         collectionUri,
+        "A collection of AI assistants", // Collection description
         royaltyBasisPoints,
         mintPrice,
-        totalSupply
+        new BN(0), // start_mint_date (0 means start immediately)
+        new BN(0)  // end_mint_date (0 means no end date)
       )
       .accounts({
         collection,
@@ -1263,7 +1274,6 @@ describe("ainft", async () => {
     assert.equal(collectionAccount.name, collectionName, "Collection name mismatch");
     assert.equal(collectionAccount.symbol, collectionSymbol, "Collection symbol mismatch");
     assert.equal(collectionAccount.mintCount.toString(), "0", "Collection mint count should be 0");
-    assert.equal(collectionAccount.totalSupply.toString(), totalSupply.toString(), "Collection total supply mismatch");
     assert.equal(collectionAccount.mintPrice.toString(), mintPrice.toString(), "Collection mint price mismatch");
 
     // 3. Premint an NFT

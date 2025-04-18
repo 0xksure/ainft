@@ -97,20 +97,34 @@ pub fn register_execution_client_handler(
         execution_client_bump != 0,
         AiNftError::InvalidExecutionClientBump
     );
+
     let execution_client = &mut ctx.accounts.execution_client;
 
-    execution_client.set(
-        ctx.accounts.ai_nft.key(),
-        ctx.accounts.signer.key(),
+    // Instead of using a function call with many parameters which creates a large stack frame,
+    // directly set each field
+    execution_client.ai_nft = ctx.accounts.ai_nft.key();
+    execution_client.authority = ctx.accounts.signer.key();
+    execution_client.compute_token_address = ctx.accounts.compute_token_account.key();
+    execution_client.gas = gas;
+    execution_client.compute_mint = ctx.accounts.compute_mint.key();
+    execution_client.liquid_staking_token_mint = ctx.accounts.staked_mint.key();
+    execution_client.stake_pool_token_account = ctx.accounts.staked_token_account.key();
+    execution_client.total_compute = 0;
+    execution_client.total_staked = 0;
+    execution_client.total_processed = 0;
+    execution_client.staker_fee_share = staker_fee_share;
+    execution_client.active = true;
+    execution_client.bump = [execution_client_bump];
+    execution_client.supported_message_types = supported_message_types.clone();
+
+    // Emit event for the execution client registration
+    emit!(ExecutionClientRegistered {
+        authority: ctx.accounts.signer.key(),
+        execution_client: ctx.accounts.execution_client.key(),
         gas,
-        ctx.accounts.compute_mint.key(),
-        execution_client_bump,
-        supported_message_types.clone(),
-        ctx.accounts.staked_mint.key(),
-        ctx.accounts.staked_token_account.key(),
-        ctx.accounts.compute_token_account.key(),
-        staker_fee_share,
-    )?;
+        stake: 0,
+        supported_message_types,
+    });
 
     Ok(())
 }

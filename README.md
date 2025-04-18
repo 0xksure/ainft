@@ -102,3 +102,4 @@ pay for off chain compute.
 - [ ] User can mint randomly or pick an NFT
 - [ ] All NFTs in collections can use the same execution client
 - [ ] All NFTs use the same compute mint 
+- [ ] Make sure that the program is initialized before being able to create collection

@@ -1,4 +1,23 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI NFT Frontend
+
+This is the frontend application for AI NFT, a platform for creating, managing, and interacting with AI-powered NFTs on Solana.
+
+## New Features
+
+### External Compute Token Integration
+- Support for setting external SPL tokens as compute tokens for the AI NFT platform
+- Management interface for external compute tokens
+- Balance display for wallet and agent compute tokens
+
+### Staking and Rewards System
+- Create stake accounts to earn rewards for providing compute resources
+- Stake compute tokens to execution clients
+- Unstake tokens with earned rewards
+
+### Character Configuration Management
+- Create detailed character configurations for AI NFTs
+- Configure personality traits, knowledge areas, and behavior patterns
+- Reusable configurations that can be applied to any AI NFT
 
 ## Getting Started
 
@@ -8,15 +27,27 @@ First, run the development server:
 npm run dev
 # or
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:5000](http://localhost:5000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Technologies Used
+
+- Next.js 15
+- React 19
+- Solana Web3.js
+- Anchor Framework
+- TailwindCSS
+
+## Features
+
+- Connect to Solana wallet
+- Mint AI NFTs
+- Chat with AI NFTs
+- Manage AI NFT settings
+- Register and manage execution clients
+- Stake compute tokens
+- Create character configurations
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 

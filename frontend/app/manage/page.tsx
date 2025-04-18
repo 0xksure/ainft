@@ -27,6 +27,7 @@ import Link from 'next/link';
 import { Edit, MessageSquare, ExternalLink, Coins, Server } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../components/ui/toast';
+import { getExplorerUrl, getExplorerName } from '../utils/explorer';
 
 // AI NFT interface
 interface AiNft {
@@ -384,12 +385,12 @@ export default function ManagePage() {
                                                 day: '2-digit'
                                             })}</span>
                                             <a
-                                                href={`https://explorer.solana.com/address/${nft.address}?cluster=${network}`}
+                                                href={getExplorerUrl('address', nft.address, network)}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="flex items-center text-blue-400 hover:underline"
+                                                className="text-gray-400 hover:text-blue-400 transition-colors"
                                             >
-                                                View <ExternalLink size={14} className="ml-1" />
+                                                <ExternalLink size={14} className="ml-1" />
                                             </a>
                                         </div>
 
@@ -462,7 +463,7 @@ export default function ManagePage() {
                                                                     const selectedClient = executionClients.find(
                                                                         (client) => client.publicKey.toString() === e.target.value
                                                                     );
-                                                                    
+
                                                                     if (selectedClient) {
                                                                         // First update local state to show selection immediately
                                                                         setAiNfts(prev =>
@@ -472,7 +473,7 @@ export default function ManagePage() {
                                                                                     : item
                                                                             )
                                                                         );
-                                                                        
+
                                                                         // Then update on blockchain
                                                                         handleUpdateExecutionClient(nft, selectedClient);
                                                                     }
@@ -481,8 +482,8 @@ export default function ManagePage() {
                                                         >
                                                             <option value="">Select Execution Client</option>
                                                             {executionClients.map((client) => (
-                                                                <option 
-                                                                    key={client.publicKey.toString()} 
+                                                                <option
+                                                                    key={client.publicKey.toString()}
                                                                     value={client.publicKey.toString()}
                                                                 >
                                                                     {client.publicKey.toString().substring(0, 4)}...{client.publicKey.toString().substring(client.publicKey.toString().length - 4)}

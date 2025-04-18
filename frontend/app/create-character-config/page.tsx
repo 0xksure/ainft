@@ -9,6 +9,7 @@ import CopyableAddress from '../components/CopyableAddress';
 import { motion } from 'framer-motion';
 import { cn } from '../components/ui/utils';
 import { useRouter } from 'next/navigation';
+import { getExplorerUrl, getExplorerName } from '../utils/explorer';
 
 export default function CreateCharacterConfigPage() {
     const wallet = useWallet();
@@ -187,12 +188,12 @@ export default function CreateCharacterConfigPage() {
                                     <p>
                                         <span className="font-semibold">Transaction:</span>{' '}
                                         <a
-                                            href={`https://explorer.solana.com/tx/${txHash}?cluster=${network}`}
+                                            href={getExplorerUrl('tx', txHash, network)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-blue-400 hover:underline"
                                         >
-                                            View on Solana Explorer
+                                            View on {getExplorerName(network)} Explorer
                                         </a>
                                     </p>
                                     <p className="mt-4">
@@ -310,7 +311,7 @@ export default function CreateCharacterConfigPage() {
                                     {/* Character Personality */}
                                     <div>
                                         <h3 className="text-xl font-semibold mb-4">Character Personality</h3>
-                                        
+
                                         {/* Bio */}
                                         <div className="mb-6">
                                             <label className="block mb-2">Bio (up to 5 entries)</label>
