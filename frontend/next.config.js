@@ -18,6 +18,9 @@ const nextConfig = {
       'upload.wikimedia.org', // Allow Wikimedia Commons
       'www.wikipedia.org', // Allow Wikipedia
       'example.com', // Allow example.com
+      'encrypted-tbn0.gstatic.com', // Allow Google images
+      'lh3.googleusercontent.com', // Allow Google user content
+      'storage.googleapis.com', // Allow Google Cloud Storage
     ],
   },
 };
